@@ -13,7 +13,7 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
 - `src/llm/openai-compatible.ts`
   - OpenAI 호환 API 어댑터
 - `config/model-profiles.json`
-  - 모델 후보/프로파일(main/worker/single) 관리
+  - API 서버/모델/에이전트(main-worker/single-main) 설정 관리
 - `src/models/profile-registry.ts`
   - 후보 해석 및 프로파일 선택
 - `src/runtime/session-store.ts`
@@ -43,3 +43,4 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
   - `npm run chat -- --session default`
   - `npm run chat:turn -- --session default --message "안녕"`
   - `npm run models:list`
+  - `npm run agent:run -- --agent default --goal "..."` 

@@ -22,12 +22,17 @@
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-- CLI(현재): `npm run agent:run -- --session <id> --goal "<목표>" --mode main-worker`
-- 옵션: `--mode single-main`, `--max-steps <n>`
+- CLI(현재): `npm run agent:run -- --session <id> --agent <agent-id> --goal "<목표>"`
+- CLI(TUI): `npm run agent:tui` 후 `/agent <id>`로 전환
+- 옵션 override: `--mode single-main|main-worker`, `--max-steps <n>`, `--no-stream`
 - WebUI(계획): 목표 입력 후 `Run`으로 동일 루프 실행
 
 ## 현재 구현 상태
 - `src/runtime/agent-loop.ts`
   - worker 모델 반복 호출로 증거 수집(JSON 포맷)
   - main 모델 최종 보고 생성
+  - OpenAI compatible SSE 스트리밍 토큰 이벤트(worker/main) 발행
 - 세션 로그에 worker step/evidence를 system 메시지로 저장
+- `src/cli/agent-tui.ts`
+  - Codex/OpenClaw 스타일의 로그+입력 기반 TUI 루프
+  - 실행 중 step 이벤트 + 생성 토큰(worker/main) 실시간 출력

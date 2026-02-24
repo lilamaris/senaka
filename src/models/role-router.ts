@@ -1,27 +1,29 @@
-import { pickCandidateFromProfile } from "./profile-registry.js";
-import type { ModelRegistry, ResolvedModelCandidate } from "../types/model.js";
+import { getAgentDefinition, resolveModelCandidateById } from "./profile-registry.js";
+import type { AgentRunOverride, ModelRegistry, ResolvedAgentConfig } from "../types/model.js";
 
-export type AgentMode = "main-worker" | "single-main";
+export function routeAgentModels(
+  registry: ModelRegistry,
+  agentId: string,
+  override?: AgentRunOverride,
+): ResolvedAgentConfig {
+  const agent = getAgentDefinition(registry, agentId);
+  const mode = override?.mode ?? agent.mode;
+  const maxSteps = override?.maxSteps ?? agent.maxSteps ?? 3;
+  const stream = override?.stream ?? agent.stream ?? true;
 
-export interface RoutedModels {
-  mode: AgentMode;
-  main: ResolvedModelCandidate;
-  worker: ResolvedModelCandidate;
-}
-
-export function routeModels(registry: ModelRegistry, mode: AgentMode): RoutedModels {
-  if (mode === "single-main") {
-    const single = pickCandidateFromProfile(registry, "single");
-    return {
-      mode,
-      main: single,
-      worker: single,
-    };
-  }
+  const main = resolveModelCandidateById(registry, agent.mainModelId);
+  const worker =
+    mode === "single-main"
+      ? main
+      : resolveModelCandidateById(registry, agent.workerModelId ?? agent.mainModelId);
 
   return {
+    id: agentId,
     mode,
-    main: pickCandidateFromProfile(registry, "main"),
-    worker: pickCandidateFromProfile(registry, "worker"),
+    maxSteps,
+    stream,
+    main,
+    worker,
+    description: agent.description,
   };
 }

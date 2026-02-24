@@ -19,11 +19,19 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-- WebUI(현재): `npm run webui:install`, `npm run webui:dev` 후 `http://localhost:4173`
+- WebUI(향후): 계획 단계
 
-## 현재 WebUI 디버그 기능
-- 세션 목록/업데이트 시간/메시지 수 조회
-- 세션 선택 및 신규 세션 열기
-- 세션 스레드 원문 조회(system/user/assistant)
-- 사용자 턴 전송 및 응답 누적 저장
-- 세션 리셋
+## WebUI 상태
+- WebUI 구현은 현재 리포지토리에서 제거됨
+- 재도입 시 CLI 런타임 공유 원칙을 유지해야 함
+
+## 현재 CLI TUI 기능
+- `npm run agent:tui`로 목표 기반 agent loop 실행
+- agent 설정 전환(`/agent <id>`)
+- worker/main 분리 모드 override(`/mode main-worker|single-main|auto`)
+- 루프 최대 step override(`/steps N|auto`)
+- 스트리밍 override(`/stream on|off|auto`)
+- 세션 전환(`/session ID`)
+- worker/main 토큰 생성 스트리밍 무절단 실시간 확인(`WORKER STREAM`, `MAIN STREAM`)
+- think 모델 출력은 `THINK PHASE` / `FINAL RESPONSE` 단락 분리
+- 턴 간 구분선(`TURN N START/END`)으로 실행 경계 표시

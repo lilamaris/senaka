@@ -1,8 +1,0 @@
-{
-  "extends": "./.svelte-kit/tsconfig.json",
-  "compilerOptions": {
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "types": ["node"]
-  }
-}

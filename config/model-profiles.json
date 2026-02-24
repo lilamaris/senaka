@@ -1,20 +1,25 @@
 {
-  "candidates": [
+  "servers": [
     {
-      "id": "lmstudio-main",
+      "id": "lmstudio-local",
       "provider": "openai-compatible",
       "baseUrlEnv": "OPENAI_BASE_URL",
       "apiKeyEnv": "OPENAI_API_KEY",
-      "modelEnv": "OPENAI_MODEL",
+      "description": "Local LM Studio OpenAI-compatible endpoint"
+    }
+  ],
+  "models": [
+    {
+      "id": "main-default",
+      "serverId": "lmstudio-local",
+      "model": "glm-4.7-flash@q3_k_s",
       "temperature": 0.2,
-      "description": "Primary model for final synthesis"
+      "description": "Primary synthesis model"
     },
     {
-      "id": "lmstudio-worker-fast",
-      "provider": "openai-compatible",
-      "baseUrlEnv": "OPENAI_BASE_URL",
-      "apiKeyEnv": "OPENAI_API_KEY",
-      "modelEnv": "WORKER_OPENAI_MODEL",
+      "id": "worker-fast",
+      "serverId": "lmstudio-local",
+      "model": "gpt-oss-20b",
       "temperature": 0.1,
       "extraBody": {
         "think": false
@@ -22,15 +27,21 @@
       "description": "Fast worker model with think disabled"
     }
   ],
-  "profiles": {
-    "main": {
-      "candidateIds": ["lmstudio-main"]
-    },
-    "worker": {
-      "candidateIds": ["lmstudio-worker-fast", "lmstudio-main"]
+  "agents": {
+    "default": {
+      "mode": "main-worker",
+      "mainModelId": "main-default",
+      "workerModelId": "worker-fast",
+      "maxSteps": 3,
+      "stream": true,
+      "description": "Default agent profile"
     },
     "single": {
-      "candidateIds": ["lmstudio-main"]
+      "mode": "single-main",
+      "mainModelId": "main-default",
+      "maxSteps": 2,
+      "stream": true,
+      "description": "Single model fallback profile"
     }
   }
 }

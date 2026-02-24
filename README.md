@@ -8,7 +8,7 @@
 - 모델 역할 분리 유연성(main-only 또는 main+worker)
 - shell/MCP 도구 호출 호환
 - 내부 동작의 높은 관측 가능성(디버깅 친화)
-- CLI/WebUI 이중 제어 표면
+- CLI 우선 제어 표면
 
 ## 프로젝트 목적
 - 사용자의 목표를 자연어로 받아, 로컬 실행 가능한 도구를 통해 증거를 수집하고, 검증된 결과를 보고하는 호스트 시스템 구현
@@ -21,15 +21,15 @@
 - 아키텍처 라우팅
   - `AGENTS.md` -> `docs/ARCHITECTURE.md` -> `docs/modules/*.md`
 - 기능 모듈 정의
-  - 오케스트레이터, 모델 라우팅/컨텍스트, 도구(shell/MCP), 증거 파이프라인, 관측성, 인터페이스(CLI/WebUI)
+  - 오케스트레이터, 모델 라우팅/컨텍스트, 도구(shell/MCP), 증거 파이프라인, 관측성, 인터페이스(CLI)
 - 목적별 실행 TODO 분리
   - `docs/todo/` 하위에 영역별 TODO 문서 제공
   - `docs/todo/TODO-mvp-minimum-modules.md`에 MVP 최소 구현 기준 정의
 - 최소 LLM 통신 경로 구현
   - 환경설정 로더: `src/config/env.ts`
   - OpenAI 호환 provider: `src/llm/openai-compatible.ts`
-  - 모델 후보/프로파일 레지스트리: `config/model-profiles.json`, `src/models/profile-registry.ts`
-  - 역할 라우팅(main/worker): `src/models/role-router.ts`
+  - 모델 레지스트리(서버/모델/에이전트): `config/model-profiles.json`, `src/models/profile-registry.ts`
+  - 역할 라우팅(agent 블럭 기반): `src/models/role-router.ts`
   - Agent loop: `src/runtime/agent-loop.ts`, `src/cli/agent-run.ts`
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
@@ -81,29 +81,29 @@ npm run chat:turn -- --session default --message "안녕하세요"
 실행 예시:
 ```bash
 npm run models:list
-npm run agent:run -- --session default --goal "현재 세션에서 의사결정 리스크를 정리해줘" --mode main-worker --max-steps 3
+npm run agent:run -- --session default --agent default --goal "현재 세션에서 의사결정 리스크를 정리해줘"
+npm run agent:tui
 ```
 
 모드:
 - `main-worker`: worker(증거 수집) + main(최종 요약)
 - `single-main`: 단일 모델로 루프 실행
 
-### 3) WebUI로 세션 스레드 디버깅
-실행 예시:
-```bash
-npm run webui:install
-npm run webui:dev
-```
+TUI 명령:
+- `/agent <ID>`
+- `/mode main-worker|single-main|auto`
+- `/steps <N>|auto`
+- `/stream on|off|auto`
+- `/session <ID>`
+- `/clear`
+- `/exit`
 
-접속:
-- `http://localhost:4173`
-
-제공 기능:
-- 세션 목록 조회
-- 세션 선택/생성
-- 메시지 스레드 조회(system/user/assistant)
-- 턴 전송 및 응답 기록
-- 세션 리셋
+스트리밍:
+- `agent:run`, `agent:tui`는 기본적으로 chat completion 스트리밍을 사용합니다.
+- 비활성화: `npm run agent:run -- --agent default --goal "<목표>" --no-stream`
+- `agent:tui`에서는 생성 중 토큰이 `WORKER STREAM`, `MAIN STREAM` 섹션에 무절단으로 실시간 표시됩니다.
+- `<think>...</think>`가 포함된 경우 `THINK PHASE`와 `FINAL RESPONSE` 단락으로 분리해서 표시합니다.
+- 각 실행 턴은 `TURN N START/END` 구분선으로 명확히 분리됩니다.
 
 ## 구현 마일스톤
 ### M1. Foundation Runtime
@@ -138,7 +138,7 @@ npm run webui:dev
 
 ### M6. Interfaces
 - CLI(`chat`, `run`, `trace`, `tool`, `evidence`)
-- WebUI(세션/타임라인/증거/설정)
+- WebUI(향후 계획)
 - 공통 세션/이벤트 모델 완성
 
 ## 문서 진화 원칙

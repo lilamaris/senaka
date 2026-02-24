@@ -24,7 +24,7 @@
 - `interfaces/cli/`
   - codex/claude-cli 유사 UX
 - `interfaces/webui/`
-  - 세션/실행 상태/증거/디버깅 뷰
+  - 향후 계획(세션/실행 상태/증거/디버깅 뷰)
 - `docs/`
   - 아키텍처, 모듈, TODO, 운영 가이드
 
@@ -53,11 +53,11 @@
 ## CLI / WebUI 사용 개요
 - CLI
   - 현재 구현: `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-  - 현재 구현: `npm run models:list`, `npm run agent:run -- --goal "<목표>" --mode main-worker|single-main`
+  - 현재 구현: `npm run models:list`, `npm run agent:run -- --agent <id> --goal "<목표>"`
+  - 현재 구현: `npm run agent:tui` (로그/입력 기반 TUI)
   - 계획: 단계별 실행 로그/증거 출력, 수동 개입(재시도/중단) 확장
 - WebUI
-  - 현재 구현: `interfaces/webui` SvelteKit 기반 세션 디버그 UI
-  - 세션 목록/스레드 조회, 턴 전송, 세션 리셋
+  - 현재 미구현(향후 계획)
   - 계획: 실행 타임라인, 도구 호출 상세, think-token/summary 노출
 
 ## TODO 문서 라우팅

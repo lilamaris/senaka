@@ -1,9 +1,9 @@
 import type { ChatMessage, ChatSession } from "../types/chat.js";
 import type { AppConfig } from "../config/env.js";
-import type { AgentMode } from "../models/role-router.js";
-import { routeModels } from "../models/role-router.js";
+import type { AgentMode, AgentRunOverride } from "../types/model.js";
+import { routeAgentModels } from "../models/role-router.js";
 import { loadModelRegistry } from "../models/profile-registry.js";
-import { createChatCompletionByCandidate } from "../llm/openai-compatible.js";
+import { createChatCompletionByCandidate, streamChatCompletionByCandidate } from "../llm/openai-compatible.js";
 import { saveSession } from "./session-store.js";
 
 interface WorkerStep {
@@ -13,7 +13,24 @@ interface WorkerStep {
   next_focus: string;
 }
 
+export type AgentLoopEvent =
+  | { type: "start"; agentId: string; mode: AgentMode; goal: string }
+  | { type: "worker-start"; step: number }
+  | { type: "worker-token"; step: number; token: string }
+  | { type: "worker-step"; step: number; stepSummary: string; evidence: string[]; done: boolean; nextFocus: string }
+  | { type: "main-start"; evidenceCount: number }
+  | { type: "main-token"; token: string }
+  | { type: "complete"; steps: number; evidenceCount: number };
+
+export interface AgentLoopOptions extends AgentRunOverride {
+  onEvent?: (event: AgentLoopEvent) => void;
+}
+
 export interface AgentRunResult {
+  agentId: string;
+  mode: AgentMode;
+  maxSteps: number;
+  stream: boolean;
   summary: string;
   evidence: string[];
   steps: number;
@@ -88,21 +105,42 @@ export async function runAgentLoop(
   config: AppConfig,
   session: ChatSession,
   goal: string,
-  mode: AgentMode,
-  maxSteps: number,
+  agentId: string,
+  options?: AgentLoopOptions,
 ): Promise<AgentRunResult> {
   const registry = await loadModelRegistry(config.modelProfilesPath);
-  const routed = routeModels(registry, mode);
-  const evidence: string[] = [];
+  const routed = routeAgentModels(registry, agentId, {
+    mode: options?.mode,
+    maxSteps: options?.maxSteps,
+    stream: options?.stream,
+  });
 
-  session.messages.push({ role: "user", content: `[AGENT_GOAL] ${goal}` });
+  const evidence: string[] = [];
+  options?.onEvent?.({ type: "start", agentId, mode: routed.mode, goal });
+
+  session.messages.push({ role: "user", content: `[AGENT_GOAL:${agentId}] ${goal}` });
   await saveSession(config.sessionDir, session);
 
   let steps = 0;
-  for (let step = 1; step <= maxSteps; step += 1) {
+  for (let step = 1; step <= routed.maxSteps; step += 1) {
     steps = step;
-    const workerReply = await createChatCompletionByCandidate(routed.worker, workerPrompt(goal, evidence, step));
+    options?.onEvent?.({ type: "worker-start", step });
+
+    const workerReply = routed.stream
+      ? await streamChatCompletionByCandidate(routed.worker, workerPrompt(goal, evidence, step), {
+          onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
+        })
+      : await createChatCompletionByCandidate(routed.worker, workerPrompt(goal, evidence, step));
+
     const worker = parseWorkerStep(workerReply.content);
+    options?.onEvent?.({
+      type: "worker-step",
+      step,
+      stepSummary: worker.step_summary,
+      evidence: worker.evidence,
+      done: worker.done,
+      nextFocus: worker.next_focus,
+    });
 
     if (worker.step_summary.trim()) {
       session.messages.push({ role: "system", content: `[WORKER_STEP_${step}] ${worker.step_summary}` });
@@ -124,11 +162,22 @@ export async function runAgentLoop(
     }
   }
 
-  const mainReply = await createChatCompletionByCandidate(routed.main, mainPrompt(goal, evidence));
+  options?.onEvent?.({ type: "main-start", evidenceCount: evidence.length });
+  const mainReply = routed.stream
+    ? await streamChatCompletionByCandidate(routed.main, mainPrompt(goal, evidence), {
+        onToken: (token) => options?.onEvent?.({ type: "main-token", token }),
+      })
+    : await createChatCompletionByCandidate(routed.main, mainPrompt(goal, evidence));
+
   session.messages.push({ role: "assistant", content: mainReply.content });
   await saveSession(config.sessionDir, session);
+  options?.onEvent?.({ type: "complete", steps, evidenceCount: evidence.length });
 
   return {
+    agentId,
+    mode: routed.mode,
+    maxSteps: routed.maxSteps,
+    stream: routed.stream,
     summary: mainReply.content,
     evidence,
     steps,

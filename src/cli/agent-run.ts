@@ -1,34 +1,40 @@
 import { loadConfig } from "../config/env.js";
 import { runAgentLoop } from "../runtime/agent-loop.js";
 import { loadOrCreateSession } from "../runtime/session-store.js";
-import type { AgentMode } from "../models/role-router.js";
+import type { AgentMode } from "../types/model.js";
 
 interface Args {
   sessionId: string;
   goal: string;
-  mode: AgentMode;
-  maxSteps: number;
+  agentId: string;
+  mode?: AgentMode;
+  maxSteps?: number;
+  stream?: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
   const sessionIdx = argv.indexOf("--session");
   const goalIdx = argv.indexOf("--goal");
+  const agentIdx = argv.indexOf("--agent");
   const modeIdx = argv.indexOf("--mode");
   const maxIdx = argv.indexOf("--max-steps");
+  const noStream = argv.includes("--no-stream");
 
   const sessionId = sessionIdx >= 0 && argv[sessionIdx + 1] ? argv[sessionIdx + 1] : "default";
   const goal = goalIdx >= 0 && argv[goalIdx + 1] ? argv[goalIdx + 1] : "";
-  const modeRaw = modeIdx >= 0 && argv[modeIdx + 1] ? argv[modeIdx + 1] : "main-worker";
-  const maxRaw = maxIdx >= 0 && argv[maxIdx + 1] ? argv[maxIdx + 1] : "3";
+  const agentId = agentIdx >= 0 && argv[agentIdx + 1] ? argv[agentIdx + 1] : "default";
 
   if (!goal.trim()) {
     throw new Error("--goal is required");
   }
 
-  const mode = modeRaw === "single-main" ? "single-main" : "main-worker";
-  const maxSteps = Number.isFinite(Number(maxRaw)) ? Math.max(1, Number(maxRaw)) : 3;
+  const modeRaw = modeIdx >= 0 && argv[modeIdx + 1] ? argv[modeIdx + 1] : undefined;
+  const mode = modeRaw ? (modeRaw === "single-main" ? "single-main" : "main-worker") : undefined;
 
-  return { sessionId, goal, mode, maxSteps };
+  const maxRaw = maxIdx >= 0 && argv[maxIdx + 1] ? argv[maxIdx + 1] : undefined;
+  const maxSteps = maxRaw && Number.isFinite(Number(maxRaw)) ? Math.max(1, Number(maxRaw)) : undefined;
+
+  return { sessionId, goal, agentId, mode, maxSteps, stream: noStream ? false : undefined };
 }
 
 async function main(): Promise<void> {
@@ -36,11 +42,18 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const session = await loadOrCreateSession(config.sessionDir, args.sessionId, config.systemPrompt);
 
-  process.stdout.write(`agent mode: ${args.mode}\n`);
+  process.stdout.write(`agent profile: ${args.agentId}\n`);
   process.stdout.write(`session: ${session.id}\n`);
 
-  const result = await runAgentLoop(config, session, args.goal, args.mode, args.maxSteps);
+  const result = await runAgentLoop(config, session, args.goal, args.agentId, {
+    mode: args.mode,
+    maxSteps: args.maxSteps,
+    stream: args.stream,
+  });
 
+  process.stdout.write(`resolved mode: ${result.mode}\n`);
+  process.stdout.write(`resolved maxSteps: ${result.maxSteps}\n`);
+  process.stdout.write(`resolved stream: ${result.stream}\n`);
   process.stdout.write(`worker model: ${result.workerModel}\n`);
   process.stdout.write(`main model: ${result.mainModel}\n`);
   process.stdout.write(`steps: ${result.steps}\n`);
