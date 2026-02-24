@@ -1,5 +1,9 @@
 # evidence-pipeline
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-evidence-validation.md`
+
 ## 기능 설명
 도구 실행 결과를 증거 단위로 수집/정규화/검증하여 루프 판정에 반영.
 

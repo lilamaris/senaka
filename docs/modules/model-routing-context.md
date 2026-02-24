@@ -1,5 +1,9 @@
 # model-routing-context
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-model-routing-context.md`
+
 ## 기능 설명
 로컬 LLM 성능 편차를 고려해 모델 역할과 컨텍스트 주입량을 제어.
 

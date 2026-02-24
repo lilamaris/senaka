@@ -1,5 +1,9 @@
 # interfaces-cli-webui
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-interfaces-cli-webui.md`
+
 ## 기능 설명
 CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확보.
 
@@ -14,5 +18,5 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 - 양쪽 모두 같은 세션 ID/이벤트 모델 사용
 
 ## 사용 방법
-- CLI: `hostctl chat`, `hostctl run`, `hostctl trace watch`
-- WebUI: `/sessions`, `/session/:id`, `/settings/models`
+- CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
+- WebUI(계획): `/sessions`, `/session/:id`, `/settings/models`

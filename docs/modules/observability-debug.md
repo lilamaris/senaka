@@ -1,5 +1,9 @@
 # observability-debug
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-observability-operations.md`
+
 ## 기능 설명
 실행 과정의 투명성 확보를 위한 이벤트/로그/트레이싱/디버깅 모듈.
 

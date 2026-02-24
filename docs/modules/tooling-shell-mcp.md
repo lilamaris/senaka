@@ -1,5 +1,9 @@
 # tooling-shell-mcp
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-tooling-mcp.md`
+
 ## 기능 설명
 shell 기반 도구 호출과 MCP 호환 도구 호출을 단일 인터페이스로 제공.
 

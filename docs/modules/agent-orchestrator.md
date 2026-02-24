@@ -1,5 +1,9 @@
 # agent-orchestrator
 
+## 관련 TODO
+- `docs/todo/TODO-mvp-minimum-modules.md`
+- `docs/todo/TODO-foundation-architecture.md`
+
 ## 기능 설명
 사용자 목표를 받아 Agent Loop를 실행하는 핵심 오케스트레이터.
 
@@ -17,5 +21,6 @@
 5. 완료 판정 후 결과 반환
 
 ## 사용 방법
-- CLI: `hostctl run --goal "..."`
-- WebUI: 목표 입력 후 `Run`으로 동일 루프 실행
+- CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
+- CLI(계획): `hostctl run --goal "..."`
+- WebUI(계획): 목표 입력 후 `Run`으로 동일 루프 실행
