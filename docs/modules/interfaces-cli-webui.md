@@ -8,9 +8,9 @@
 CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확보.
 
 ## 모듈 구성
-- `interfaces/cli`: 명령 진입점, 스트리밍 출력, 수동 제어
-- `interfaces/webui`: 세션 대시보드, 증거/로그/설정 UI
-- `interfaces/shared-client`: 공통 API/이벤트 구독 클라이언트
+- `src/cli/*.ts`: 명령 진입점, 스트리밍 출력, 수동 제어(현재 구현)
+- `interfaces/webui`: 세션 대시보드, 증거/로그/설정 UI(계획)
+- `interfaces/shared-client`: 공통 API/이벤트 구독 클라이언트(계획)
 
 ## UX 원칙
 - CLI 우선 완전 기능 제공
@@ -19,6 +19,8 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
+- CLI(현재): `npm run agent:run -- --session <id> --agent <agent-id> --goal "<목표>"`
+- CLI(현재): `npm run agent:tui`
 - WebUI(향후): 계획 단계
 
 ## WebUI 상태
@@ -35,3 +37,7 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 - worker/main 토큰 생성 스트리밍 무절단 실시간 확인(`WORKER STREAM`, `MAIN STREAM`)
 - think 모델 출력은 `THINK PHASE` / `FINAL RESPONSE` 단락 분리
 - 턴 간 구분선(`TURN N START/END`)으로 실행 경계 표시
+
+## 현재 CLI 단일 실행 기능
+- `agent:run`은 worker `ask` 액션 발생 시 `answer(YES/NO)>`로 사용자 응답 수집
+- 실행 종료 후 모델/step/증거 요약과 최종 응답 출력

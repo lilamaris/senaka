@@ -8,10 +8,9 @@
 로컬 LLM 성능 편차를 고려해 모델 역할과 컨텍스트 주입량을 제어.
 
 ## 모듈 구성
-- `models/profile-registry`: 모델/양자화별 capability 매핑
-- `models/role-router`: main-only vs main+worker 결정
-- `models/context-budgeter`: 최소 맥락 주입 규칙
-- `models/prompt-kernel`: 시스템 프롬프트 압박 완화용 핵심 지시 집합
+- `src/models/profile-registry.ts`: 모델 프로파일(`servers/models/agents`) 로드/검증
+- `src/models/role-router.ts`: `single-main`/`main-worker` 라우팅 및 override 적용
+- `src/runtime/agent-loop.ts`: worker/main 각각에 필요한 최소 컨텍스트 조합
 
 ## 핵심 원칙
 - 최소 정보로 단계 수행(필수 제약 + 직전 증거 + 현재 목표)
@@ -28,3 +27,4 @@
 - `src/models/profile-registry.ts`로 `servers/models/agents` 로드
 - `src/models/role-router.ts`로 agent 블럭 기반 `main-worker`, `single-main` 라우팅
 - worker 후보에 `extraBody`를 넣어 `think: false` 같은 provider 옵션 전달 가능
+- 컨텍스트 버짓터/프롬프트 커널 전용 모듈은 아직 미구현(루프 내부 조합으로 처리)

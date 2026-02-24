@@ -8,10 +8,10 @@
 사용자 목표를 받아 Agent Loop를 실행하는 핵심 오케스트레이터.
 
 ## 모듈 구성
-- `runtime/session-manager`: 세션 생성/복구/종료
-- `runtime/goal-manager`: 목표 분해, 성공 기준 관리
-- `runtime/loop-engine`: step 실행, 중단/재개, 최대 반복 제한
-- `runtime/policy-gates`: 위험 명령 승인, 사용자 개입 지점
+- `src/runtime/agent-loop.ts`: worker/main 루프 실행, step 제어, 완료 판정
+- `src/runtime/session-store.ts`: 세션 생성/복구/저장
+- `src/models/role-router.ts`: agent 설정 기반 모드/모델 라우팅
+- `src/cli/agent-run.ts`, `src/cli/agent-tui.ts`: 루프 실행 진입점과 사용자 개입 처리
 
 ## 모듈 간 흐름
 1. 세션 시작
@@ -23,16 +23,19 @@
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
 - CLI(현재): `npm run agent:run -- --session <id> --agent <agent-id> --goal "<목표>"`
+- `agent:run`에서 worker가 `ask`를 요청하면 `answer(YES/NO)>` 프롬프트로 응답
 - CLI(TUI): `npm run agent:tui` 후 `/agent <id>`로 전환
 - 옵션 override: `--mode single-main|main-worker`, `--max-steps <n>`, `--no-stream`
 - WebUI(계획): 목표 입력 후 `Run`으로 동일 루프 실행
 
 ## 현재 구현 상태
 - `src/runtime/agent-loop.ts`
-  - worker 모델 반복 호출로 증거 수집(JSON 포맷)
-  - main 모델 최종 보고 생성
+  - worker 액션 루프(`call_tool`, `ask`, `finalize`) 기반 증거 수집
+  - `call_tool` 시 shell 명령 실행 결과(stdout/stderr/exit code)를 worker에 재주입
+  - `ask` 시 사용자 YES/NO 응답을 받아 동일 세션에서 증거 수집 계속 진행
+  - `finalize` 시 main 모델이 증거 요약으로 충분성 판단 후 `finalize/continue` 결정
   - OpenAI compatible SSE 스트리밍 토큰 이벤트(worker/main) 발행
-- 세션 로그에 worker step/evidence를 system 메시지로 저장
+- 세션 로그에 worker tool/guidance 및 ask 질의/응답을 메시지로 저장
 - `src/cli/agent-tui.ts`
   - Codex/OpenClaw 스타일의 로그+입력 기반 TUI 루프
   - 실행 중 step 이벤트 + 생성 토큰(worker/main) 실시간 출력

@@ -20,6 +20,8 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
   - 세션 생성/복구/저장
 - `src/runtime/chat-service.ts`
   - 사용자 턴 실행 및 응답 저장
+- `data/worker/SYSTEM.md`
+  - worker 모델 JSON 액션 프로토콜 정의
 - `src/cli/chat.ts`
   - 지속 세션 인터랙티브 CLI
 - `src/cli/chat-turn.ts`

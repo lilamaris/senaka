@@ -8,18 +8,20 @@
 도구 실행 결과를 증거 단위로 수집/정규화/검증하여 루프 판정에 반영.
 
 ## 모듈 구성
-- `evidence/collector`: raw 결과 수집(stdout/stderr)
-- `evidence/normalizer`: 타입/출처/타임스탬프 표준화
-- `evidence/verifier`: 목표 충족 증거 판정 규칙
-- `evidence/store`: 세션별 append-only 저장소
+- `src/runtime/agent-loop.ts`
+  - tool 결과를 `tool_result` 증거로 요약/보관
+  - 사용자 응답을 `user_answer` 증거로 보관
+  - main 판단 피드백을 `main_guidance` 증거로 보관
+- `src/runtime/session-store.ts`
+  - 세션 메시지 append-only 저장(JSON 파일)
 
 ## 판정 흐름
 1. raw 결과 수집
-2. 정규화
-3. 검증 규칙 적용
-4. 성공/불충분/충돌 상태 라벨링
-5. Main 모델에 보고용 컨텍스트 전달
+2. worker/main 전달용 요약 정규화
+3. main 모델이 `finalize/continue` 판단
+4. `continue`면 guidance를 다시 worker 컨텍스트에 반영
+5. 최종 `finalize` 응답을 세션에 저장
 
 ## 사용 방법
-- CLI: `hostctl evidence tail --session <id>`
-- WebUI: Evidence 탭에서 step별 원문/정규화 결과 확인
+- CLI: `npm run agent:run -- --session <id> --agent <id> --goal "..."`
+- TUI: `npm run agent:tui`에서 tool/ask/main 이벤트 로그 확인

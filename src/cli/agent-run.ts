@@ -1,3 +1,5 @@
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { loadConfig } from "../config/env.js";
 import { runAgentLoop } from "../runtime/agent-loop.js";
 import { loadOrCreateSession } from "../runtime/session-store.js";
@@ -41,32 +43,40 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const args = parseArgs(process.argv.slice(2));
   const session = await loadOrCreateSession(config.sessionDir, args.sessionId, config.systemPrompt);
+  const rl = createInterface({ input, output });
 
   process.stdout.write(`agent profile: ${args.agentId}\n`);
   process.stdout.write(`session: ${session.id}\n`);
+  try {
+    const result = await runAgentLoop(config, session, args.goal, args.agentId, {
+      mode: args.mode,
+      maxSteps: args.maxSteps,
+      stream: args.stream,
+      askUser: async (question) => {
+        process.stdout.write(`ask> ${question}\n`);
+        return (await rl.question("answer(YES/NO)> ")).trim();
+      },
+    });
 
-  const result = await runAgentLoop(config, session, args.goal, args.agentId, {
-    mode: args.mode,
-    maxSteps: args.maxSteps,
-    stream: args.stream,
-  });
+    process.stdout.write(`resolved mode: ${result.mode}\n`);
+    process.stdout.write(`resolved maxSteps: ${result.maxSteps}\n`);
+    process.stdout.write(`resolved stream: ${result.stream}\n`);
+    process.stdout.write(`worker model: ${result.workerModel}\n`);
+    process.stdout.write(`main model: ${result.mainModel}\n`);
+    process.stdout.write(`steps: ${result.steps}\n`);
 
-  process.stdout.write(`resolved mode: ${result.mode}\n`);
-  process.stdout.write(`resolved maxSteps: ${result.maxSteps}\n`);
-  process.stdout.write(`resolved stream: ${result.stream}\n`);
-  process.stdout.write(`worker model: ${result.workerModel}\n`);
-  process.stdout.write(`main model: ${result.mainModel}\n`);
-  process.stdout.write(`steps: ${result.steps}\n`);
-
-  if (result.evidence.length > 0) {
-    process.stdout.write("evidence:\n");
-    for (const item of result.evidence) {
-      process.stdout.write(`- ${item}\n`);
+    if (result.evidence.length > 0) {
+      process.stdout.write("evidence:\n");
+      for (const item of result.evidence) {
+        process.stdout.write(`- ${item}\n`);
+      }
     }
-  }
 
-  process.stdout.write("\nfinal:\n");
-  process.stdout.write(result.summary + "\n");
+    process.stdout.write("\nfinal:\n");
+    process.stdout.write(result.summary + "\n");
+  } finally {
+    rl.close();
+  }
 }
 
 main().catch((error) => {

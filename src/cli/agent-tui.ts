@@ -30,12 +30,7 @@ function now(): string {
 }
 
 function createView(): StreamView {
-  return {
-    raw: "",
-    think: "",
-    final: "",
-    phase: "idle",
-  };
+  return { raw: "", think: "", final: "", phase: "idle" };
 }
 
 function parseThinkBlocks(raw: string): StreamView {
@@ -44,22 +39,12 @@ function parseThinkBlocks(raw: string): StreamView {
   const start = raw.indexOf(startTag);
 
   if (start < 0) {
-    return {
-      raw,
-      think: "",
-      final: raw,
-      phase: raw.trim() ? "final" : "idle",
-    };
+    return { raw, think: "", final: raw, phase: raw.trim() ? "final" : "idle" };
   }
 
   const end = raw.indexOf(endTag, start + startTag.length);
   if (end < 0) {
-    return {
-      raw,
-      think: raw.slice(start + startTag.length),
-      final: "",
-      phase: "thinking",
-    };
+    return { raw, think: raw.slice(start + startTag.length), final: "", phase: "thinking" };
   }
 
   return {
@@ -78,39 +63,32 @@ function wrapLine(text: string, width: number): string[] {
   if (width <= 8) {
     return [text];
   }
-
   const out: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > width) {
-    out.push(remaining.slice(0, width));
-    remaining = remaining.slice(width);
+  let remain = text;
+  while (remain.length > width) {
+    out.push(remain.slice(0, width));
+    remain = remain.slice(width);
   }
-
-  out.push(remaining);
+  out.push(remain);
   return out;
 }
 
 function wrapParagraphs(text: string, width: number): string[] {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const lines = normalized.split("\n");
   const out: string[] = [];
-
-  for (const line of lines) {
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
     if (!line) {
       out.push("");
       continue;
     }
     out.push(...wrapLine(line, width));
   }
-
   return out;
 }
 
-function pushLine(state: TuiState, line: string): void {
-  state.lines.push(`[${now()}] ${line}`);
-  if (state.lines.length > 300) {
-    state.lines = state.lines.slice(-300);
+function pushLine(state: TuiState, text: string): void {
+  state.lines.push(`[${now()}] ${text}`);
+  if (state.lines.length > 350) {
+    state.lines = state.lines.slice(-350);
   }
 }
 
@@ -119,9 +97,7 @@ function separator(char: string, width: number): string {
 }
 
 function renderStreamSection(title: string, view: StreamView, width: number): string[] {
-  const out: string[] = [];
-  out.push(`[${title}]`);
-
+  const out: string[] = [`[${title}]`];
   const bodyWidth = Math.max(40, width - 4);
 
   if (!view.raw.trim()) {
@@ -155,8 +131,7 @@ function render(state: TuiState): void {
   );
   output.write(topSep + "\n");
 
-  const logLines = state.lines.slice(-80);
-  for (const line of logLines) {
+  for (const line of state.lines.slice(-80)) {
     output.write(line + "\n");
   }
 
@@ -184,23 +159,28 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
     pushLine(state, `worker step ${event.step} started`);
   } else if (event.type === "worker-token") {
     state.workerView = appendToken(state.workerView, event.token);
-  } else if (event.type === "worker-step") {
-    pushLine(state, `worker step ${event.step} summary: ${event.stepSummary || "(none)"}`);
-    if (event.evidence.length > 0) {
-      for (const e of event.evidence) {
-        pushLine(state, `evidence: ${e}`);
-      }
+  } else if (event.type === "worker-action") {
+    pushLine(state, `worker action(${event.step}): ${event.action} :: ${event.detail}`);
+  } else if (event.type === "tool-start") {
+    pushLine(state, `tool start(${event.step}): ${event.cmd}`);
+  } else if (event.type === "tool-result") {
+    pushLine(state, `tool result(${event.step}): exit=${event.exitCode}`);
+    if (event.stdout.trim()) {
+      pushLine(state, `tool stdout(${event.step}): ${event.stdout.split("\n")[0]}`);
     }
-    if (event.nextFocus) {
-      pushLine(state, `next focus: ${event.nextFocus}`);
+    if (event.stderr.trim()) {
+      pushLine(state, `tool stderr(${event.step}): ${event.stderr.split("\n")[0]}`);
     }
-    if (event.done) {
-      pushLine(state, `worker reported done at step ${event.step}`);
-    }
+  } else if (event.type === "ask") {
+    pushLine(state, `worker ask(${event.step}): ${event.question}`);
+  } else if (event.type === "ask-answer") {
+    pushLine(state, `ask answer(${event.step}): ${event.answer}`);
   } else if (event.type === "main-start") {
     pushLine(state, `main synthesis started with evidence=${event.evidenceCount}`);
   } else if (event.type === "main-token") {
     state.mainView = appendToken(state.mainView, event.token);
+  } else if (event.type === "main-decision") {
+    pushLine(state, `main decision: ${event.decision}${event.guidance ? ` :: ${event.guidance}` : ""}`);
   } else if (event.type === "complete") {
     pushLine(state, `run complete: steps=${event.steps}, evidence=${event.evidenceCount}`);
     pushLine(state, `================= TURN ${state.turn} END =================`);
@@ -324,6 +304,12 @@ async function main(): Promise<void> {
         maxSteps: state.maxStepsOverride,
         stream: state.streamOverride,
         onEvent: (event) => onEvent(state, event),
+        askUser: async (question) => {
+          pushLine(state, `ASK REQUIRED: ${question}`);
+          render(state);
+          const answer = (await rl.question("ask(YES/NO)> ")).trim();
+          return answer;
+        },
       });
 
       pushLine(state, `resolved mode: ${result.mode}, maxSteps: ${result.maxSteps}, stream: ${result.stream}`);

@@ -85,6 +85,17 @@ npm run agent:run -- --session default --agent default --goal "현재 세션에�
 npm run agent:tui
 ```
 
+`agent:run` 사용자 확인:
+- worker가 `ask` 액션을 반환하면 CLI가 `answer(YES/NO)>` 프롬프트를 띄우고 같은 루프를 이어서 진행
+
+Worker 프로토콜:
+- 시스템 프롬프트 파일: `data/worker/SYSTEM.md`
+- worker 응답은 JSON 단일 객체 강제
+- 액션:
+  - `call_tool`: shell 명령 실행 후 stdout/stderr를 worker 문맥으로 재주입
+  - `ask`: YES/NO 질문으로 사용자에게 확인 후 같은 evidence 세션 계속 진행
+  - `finalize`: main 모델에 의미 있는 증거 요약 전달 후 finalize/continue 결정
+
 모드:
 - `main-worker`: worker(증거 수집) + main(최종 요약)
 - `single-main`: 단일 모델로 루프 실행

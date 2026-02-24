@@ -28,6 +28,18 @@
 - `docs/`
   - 아키텍처, 모듈, TODO, 운영 가이드
 
+## 현재 코드 구조(실제 구현)
+- `src/runtime/`
+  - `agent-loop.ts`, `chat-service.ts`, `session-store.ts`
+- `src/models/`
+  - `profile-registry.ts`, `role-router.ts`
+- `src/llm/`
+  - `openai-compatible.ts`
+- `src/cli/`
+  - `chat.ts`, `chat-turn.ts`, `models-list.ts`, `agent-run.ts`, `agent-tui.ts`
+- `data/worker/SYSTEM.md`
+  - worker JSON 액션 프로토콜 프롬프트
+
 ## 모듈 문서 라우팅
 - 에이전트 루프/오케스트레이션: `docs/modules/agent-orchestrator.md`
 - 모델 역할 분리 및 컨텍스트 정책: `docs/modules/model-routing-context.md`
@@ -55,6 +67,7 @@
   - 현재 구현: `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
   - 현재 구현: `npm run models:list`, `npm run agent:run -- --agent <id> --goal "<목표>"`
   - 현재 구현: `npm run agent:tui` (로그/입력 기반 TUI)
+  - 현재 구현: worker `ask` 액션 발생 시 `agent:run`/`agent:tui`에서 YES/NO 사용자 확인 입력 지원
   - 계획: 단계별 실행 로그/증거 출력, 수동 개입(재시도/중단) 확장
 - WebUI
   - 현재 미구현(향후 계획)
