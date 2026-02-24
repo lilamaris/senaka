@@ -18,6 +18,7 @@ export interface AppConfig {
   openaiModel: string;
   systemPrompt?: string;
   sessionDir: string;
+  modelProfilesPath: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -33,5 +34,6 @@ export function loadConfig(): AppConfig {
     openaiModel: getEnv("OPENAI_MODEL"),
     systemPrompt: process.env.SYSTEM_PROMPT?.trim() || undefined,
     sessionDir: process.env.SESSION_DIR?.trim() || "./data/sessions",
+    modelProfilesPath: process.env.MODEL_PROFILES_PATH?.trim() || "./config/model-profiles.json",
   };
 }

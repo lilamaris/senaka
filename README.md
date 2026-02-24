@@ -28,9 +28,12 @@
 - 최소 LLM 통신 경로 구현
   - 환경설정 로더: `src/config/env.ts`
   - OpenAI 호환 provider: `src/llm/openai-compatible.ts`
+  - 모델 후보/프로파일 레지스트리: `config/model-profiles.json`, `src/models/profile-registry.ts`
+  - 역할 라우팅(main/worker): `src/models/role-router.ts`
+  - Agent loop: `src/runtime/agent-loop.ts`, `src/cli/agent-run.ts`
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
-  - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`
+  - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`, `src/cli/models-list.ts`
 
 ## 문서 네비게이션
 - 라우팅 엔트리: `AGENTS.md`
@@ -58,6 +61,8 @@
 선택 환경변수:
 - `SYSTEM_PROMPT`
 - `SESSION_DIR` (기본값: `./data/sessions`)
+- `WORKER_OPENAI_MODEL` (worker 후보 모델명)
+- `MODEL_PROFILES_PATH` (기본값: `./config/model-profiles.json`)
 
 실행 예시:
 ```bash
@@ -71,6 +76,34 @@ npm run chat:turn -- --session default --message "안녕하세요"
 참고:
 - 현재는 `/chat/completions` 단일 경로를 사용합니다.
 - 인터랙티브 CLI에서 `/show`, `/reset`, `/exit` 명령을 지원합니다.
+
+### 2.5) Agent loop(main/worker 분리) 실행
+실행 예시:
+```bash
+npm run models:list
+npm run agent:run -- --session default --goal "현재 세션에서 의사결정 리스크를 정리해줘" --mode main-worker --max-steps 3
+```
+
+모드:
+- `main-worker`: worker(증거 수집) + main(최종 요약)
+- `single-main`: 단일 모델로 루프 실행
+
+### 3) WebUI로 세션 스레드 디버깅
+실행 예시:
+```bash
+npm run webui:install
+npm run webui:dev
+```
+
+접속:
+- `http://localhost:4173`
+
+제공 기능:
+- 세션 목록 조회
+- 세션 선택/생성
+- 메시지 스레드 조회(system/user/assistant)
+- 턴 전송 및 응답 기록
+- 세션 리셋
 
 ## 구현 마일스톤
 ### M1. Foundation Runtime

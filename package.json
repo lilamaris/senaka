@@ -6,7 +6,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "chat": "node dist/cli/chat.js",
-    "chat:turn": "node dist/cli/chat-turn.js"
+    "chat:turn": "node dist/cli/chat-turn.js",
+    "agent:run": "node dist/cli/agent-run.js",
+    "models:list": "node dist/cli/models-list.js",
+    "webui:install": "npm --prefix interfaces/webui install",
+    "webui:dev": "npm --prefix interfaces/webui run dev",
+    "webui:build": "npm --prefix interfaces/webui run build",
+    "webui:preview": "npm --prefix interfaces/webui run preview"
   },
   "dependencies": {
     "dotenv": "^16.4.7"

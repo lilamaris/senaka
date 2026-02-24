@@ -19,4 +19,11 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-- WebUI(계획): `/sessions`, `/session/:id`, `/settings/models`
+- WebUI(현재): `npm run webui:install`, `npm run webui:dev` 후 `http://localhost:4173`
+
+## 현재 WebUI 디버그 기능
+- 세션 목록/업데이트 시간/메시지 수 조회
+- 세션 선택 및 신규 세션 열기
+- 세션 스레드 원문 조회(system/user/assistant)
+- 사용자 턴 전송 및 응답 누적 저장
+- 세션 리셋

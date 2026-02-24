@@ -22,5 +22,12 @@
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-- CLI(계획): `hostctl run --goal "..."`
+- CLI(현재): `npm run agent:run -- --session <id> --goal "<목표>" --mode main-worker`
+- 옵션: `--mode single-main`, `--max-steps <n>`
 - WebUI(계획): 목표 입력 후 `Run`으로 동일 루프 실행
+
+## 현재 구현 상태
+- `src/runtime/agent-loop.ts`
+  - worker 모델 반복 호출로 증거 수집(JSON 포맷)
+  - main 모델 최종 보고 생성
+- 세션 로그에 worker step/evidence를 system 메시지로 저장

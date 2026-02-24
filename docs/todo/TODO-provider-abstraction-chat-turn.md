@@ -6,6 +6,8 @@ OpenAI API 호환 provider(LM Studio 포함)로 지속형 chat turn 실행 기�
 ## TODO
 - [x] `.env` 기반 설정 로더 구성(`OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`)
 - [x] OpenAI 호환 provider 구현(`/chat/completions`)
+- [x] 모델 후보/프로파일 레지스트리 구성(`config/model-profiles.json`)
+- [x] 후보 조회 CLI(`models:list`) 추가
 - [x] 세션 파일 저장소 기반 채팅 히스토리 지속화
 - [x] runtime chat turn 구성(user -> assistant 저장)
 - [x] CLI 진입점(`chat`, `chat:turn`) 제공

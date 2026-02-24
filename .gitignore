@@ -2,3 +2,6 @@ node_modules
 dist
 .env
 data/sessions/
+interfaces/webui/node_modules
+interfaces/webui/.svelte-kit
+interfaces/webui/build

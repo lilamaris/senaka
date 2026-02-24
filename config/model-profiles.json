@@ -1,0 +1,36 @@
+{
+  "candidates": [
+    {
+      "id": "lmstudio-main",
+      "provider": "openai-compatible",
+      "baseUrlEnv": "OPENAI_BASE_URL",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "modelEnv": "OPENAI_MODEL",
+      "temperature": 0.2,
+      "description": "Primary model for final synthesis"
+    },
+    {
+      "id": "lmstudio-worker-fast",
+      "provider": "openai-compatible",
+      "baseUrlEnv": "OPENAI_BASE_URL",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "modelEnv": "WORKER_OPENAI_MODEL",
+      "temperature": 0.1,
+      "extraBody": {
+        "think": false
+      },
+      "description": "Fast worker model with think disabled"
+    }
+  ],
+  "profiles": {
+    "main": {
+      "candidateIds": ["lmstudio-main"]
+    },
+    "worker": {
+      "candidateIds": ["lmstudio-worker-fast", "lmstudio-main"]
+    },
+    "single": {
+      "candidateIds": ["lmstudio-main"]
+    }
+  }
+}

@@ -19,5 +19,11 @@
 - 저성능 모델에서는 도구 스키마와 출력 형식을 더 단순화
 
 ## 사용 방법
-- 프로파일 선택: `hostctl model select <profile>`
-- 실행 전략: `single-main` 또는 `main-worker`
+- 프로파일 관리: `config/model-profiles.json`
+- 후보 확인: `npm run models:list`
+- 실행 전략: `npm run agent:run -- --goal "<목표>" --mode single-main|main-worker`
+
+## 현재 구현 상태
+- `src/models/profile-registry.ts`로 후보/프로파일 로드
+- `src/models/role-router.ts`로 `main-worker`, `single-main` 라우팅
+- worker 후보에 `extraBody`를 넣어 `think: false` 같은 provider 옵션 전달 가능
