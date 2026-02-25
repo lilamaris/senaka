@@ -67,11 +67,28 @@ function createMainViews(): Record<MainPhase, StreamView> {
   };
 }
 
-function viewFromFinalAnswer(answer: string): StreamView {
+function viewFromFinalAnswer(answer: string, previous?: StreamView): StreamView {
   const clean = answer.trim();
   if (!clean) {
-    return createView();
+    return previous ?? createView();
   }
+  const parsed = parseThinkBlocks(clean);
+  if (parsed.think.trim().length > 0 || clean.includes("<think>")) {
+    return parsed;
+  }
+
+  // 스트리밍 중 think/final이 이미 분리된 경우, final-answer가 think를 생략해도 기존 think를 보존한다.
+  const previousHasThink = Boolean(previous && (previous.think.trim().length > 0 || previous.raw.includes("<think>")));
+  if (previousHasThink) {
+    const think = previous?.think ?? "";
+    return {
+      raw: `<think>${think}</think>${clean}`,
+      think,
+      final: clean,
+      phase: "final",
+    };
+  }
+
   return { raw: clean, think: "", final: clean, phase: "final" };
 }
 
@@ -379,7 +396,7 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
       ),
     );
   } else if (event.type === "final-answer") {
-    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(event.answer);
+    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(event.answer, state.mainViews[state.activeMainPhase]);
     pushLine(state, paint(`main final report ready[${state.activeMainPhase}] (${event.answer.length} chars)`, ANSI_GREEN));
   } else if (event.type === "complete") {
     pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
