@@ -22,6 +22,7 @@
   - `AGENTS.md` -> `docs/ARCHITECTURE.md` -> `docs/modules/*.md`
 - 기능 모듈 정의
   - 오케스트레이터, 모델 라우팅/컨텍스트, 도구(shell/MCP), 증거 파이프라인, 관측성, 인터페이스(CLI)
+  - 도커 샌드박스 + 그룹 워크스페이스 모듈
 - 목적별 실행 TODO 분리
   - `docs/todo/` 하위에 영역별 TODO 문서 제공
   - `docs/todo/TODO-mvp-minimum-modules.md`에 MVP 최소 구현 기준 정의
@@ -42,6 +43,7 @@
 - 구현 TODO 인덱스: `docs/todo/README.md`
 - MVP 최소 구현 기준: `docs/todo/TODO-mvp-minimum-modules.md`
 - Provider 관련 모듈 문서: `docs/modules/api-provider-llm.md`
+- 샌드박스 모듈 문서: `docs/modules/sandbox-group-workspace.md`
 
 ## 사용 방법 (현재)
 ### 1) 문서 기반 구현 흐름
@@ -63,6 +65,17 @@
 - `SESSION_DIR` (기본값: `./data/sessions`)
 - `WORKER_OPENAI_MODEL` (worker 후보 모델명)
 - `MODEL_PROFILES_PATH` (기본값: `./config/model-profiles.json`)
+- `TOOL_SANDBOX_MODE` (`local`/`docker`, 기본값 `local`)
+- `TOOL_SHELL_PATH` (기본값: `/bin/zsh`)
+- `TOOL_TIMEOUT_MS` (기본값: `20000`)
+- `TOOL_MAX_BUFFER_BYTES` (기본값: `1048576`)
+- `DOCKER_SANDBOX_IMAGE` (기본값: `node:22-bookworm-slim`)
+- `DOCKER_WORKSPACE_ROOT` (기본값: `./data/workspaces`)
+- `DOCKER_CONTAINER_PREFIX` (기본값: `senaka-ws`)
+- `DOCKER_NETWORK` (기본값: `none`)
+- `DOCKER_MEMORY` (기본값: `512m`)
+- `DOCKER_CPUS` (기본값: `1.0`)
+- `DOCKER_PIDS_LIMIT` (기본값: `256`)
 
 실행 예시:
 ```bash
@@ -82,6 +95,7 @@ npm run chat:turn -- --session default --message "안녕하세요"
 ```bash
 npm run models:list
 npm run agent:run -- --session default --agent default --goal "현재 세션에서 의사결정 리스크를 정리해줘"
+npm run agent:run -- --session default --agent default --group team-alpha --goal "그룹 워크스페이스에서 현재 파일 목록 점검"
 npm run agent:tui
 ```
 
@@ -102,6 +116,7 @@ Worker 프로토콜:
 
 TUI 명령:
 - `/agent <ID>`
+- `/group <ID>`
 - `/mode main-worker|single-main|auto`
 - `/steps <N>|auto`
 - `/stream on|off|auto`

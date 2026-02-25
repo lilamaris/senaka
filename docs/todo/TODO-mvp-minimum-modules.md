@@ -20,6 +20,7 @@
 7. Observability Core (`src/runtime/agent-loop.ts` 이벤트 + `src/cli/agent-tui.ts` 렌더)
 8. CLI Control Surface (`src/cli/*.ts`)
 9. MCP Compatibility Shim (`TODO`, 아직 미구현)
+10. Sandbox Group Workspace (`src/runtime/sandbox-executor.ts`)
 
 ## 후순위 모듈(MVP 이후)
 - WebUI 전체 기능
@@ -43,4 +44,5 @@
 - [ ] stdout/stderr 증거 저장 및 조회
 - [ ] worker 증거 -> main 보고 흐름 검증
 - [ ] CLI 실시간 trace 출력
+- [ ] 그룹별 도커 워크스페이스 재사용
 - [ ] MCP 어댑터 기본 호출 경로 검증

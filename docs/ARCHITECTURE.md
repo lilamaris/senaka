@@ -45,6 +45,7 @@
 - 모델 역할 분리 및 컨텍스트 정책: `docs/modules/model-routing-context.md`
 - API Provider 추상 계층/채팅 턴: `docs/modules/api-provider-llm.md`
 - 도구 실행 계층(shell/MCP): `docs/modules/tooling-shell-mcp.md`
+- 도커 샌드박스/그룹 워크스페이스: `docs/modules/sandbox-group-workspace.md`
 - 증거 수집/검증 파이프라인: `docs/modules/evidence-pipeline.md`
 - 관측/디버깅/투명성: `docs/modules/observability-debug.md`
 - 사용자 인터페이스(CLI/WebUI): `docs/modules/interfaces-cli-webui.md`
@@ -80,6 +81,7 @@
 - 기반 아키텍처: `docs/todo/TODO-foundation-architecture.md`
 - 모델/컨텍스트 설계: `docs/todo/TODO-model-routing-context.md`
 - 도구/MCP 호환: `docs/todo/TODO-tooling-mcp.md`
+- 샌드박스/그룹 워크스페이스: `docs/todo/TODO-sandbox-group-workspace.md`
 - 증거/검증 파이프라인: `docs/todo/TODO-evidence-validation.md`
 - 관측/디버깅/운영: `docs/todo/TODO-observability-operations.md`
 - 인터페이스(CLI/WebUI): `docs/todo/TODO-interfaces-cli-webui.md`

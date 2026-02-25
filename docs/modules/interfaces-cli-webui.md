@@ -19,7 +19,7 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 사용 방법
 - CLI(현재): `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
-- CLI(현재): `npm run agent:run -- --session <id> --agent <agent-id> --goal "<목표>"`
+- CLI(현재): `npm run agent:run -- --session <id> --agent <agent-id> --group <group-id> --goal "<목표>"`
 - CLI(현재): `npm run agent:tui`
 - WebUI(향후): 계획 단계
 
@@ -30,6 +30,7 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 ## 현재 CLI TUI 기능
 - `npm run agent:tui`로 목표 기반 agent loop 실행
 - agent 설정 전환(`/agent <id>`)
+- 그룹 워크스페이스 전환(`/group <id>`)
 - worker/main 분리 모드 override(`/mode main-worker|single-main|auto`)
 - 루프 최대 step override(`/steps N|auto`)
 - 스트리밍 override(`/stream on|off|auto`)

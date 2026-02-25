@@ -3,6 +3,7 @@
 ## 관련 TODO
 - `docs/todo/TODO-mvp-minimum-modules.md`
 - `docs/todo/TODO-tooling-mcp.md`
+- `docs/todo/TODO-sandbox-group-workspace.md`
 
 ## 기능 설명
 shell 기반 도구 호출과 MCP 호환 도구 호출을 단일 인터페이스로 제공.
@@ -10,8 +11,11 @@ shell 기반 도구 호출과 MCP 호환 도구 호출을 단일 인터페이스
 ## 모듈 구성
 - `src/runtime/agent-loop.ts`
   - worker `call_tool` 액션 파싱
-  - shell 명령 실행(`exec`) + timeout/buffer 제한
+  - 샌드박스 실행기 호출 + timeout/buffer 제한
   - 위험 키워드 차단 및 파이프 개수 제한
+- `src/runtime/sandbox-executor.ts`
+  - `local`/`docker` 실행 모드
+  - 그룹별 도커 컨테이너/워크스페이스 재사용
 - `data/worker/SYSTEM.md`
   - worker tool 호출 JSON 스키마와 안전 규칙
 
@@ -22,5 +26,6 @@ shell 기반 도구 호출과 MCP 호환 도구 호출을 단일 인터페이스
 
 ## 사용 방법
 - `npm run agent:run -- --agent <id> --goal "<목표>"`
+- 그룹 워크스페이스: `npm run agent:run -- --agent <id> --group <group-id> --goal "<목표>"`
 - `npm run agent:tui`
 - MCP 어댑터는 아직 미구현(문서상 목표만 유지)
