@@ -59,6 +59,7 @@
   - worker completion 요청 시 think bypass primer(`<think></think>`) 옵션 지원
   - `DEBUG_LLM_REQUESTS=true` 시 worker/main 요청 payload 요약과 think bypass 주입 여부 로그 출력
   - main 결정 단계에서도 think bypass 옵션 지원, 결정/최종응답 실패 시 폴백 응답 보장
+  - `AssessSufficiency`/`ForcedSynthesis`의 main 호출 경로를 공통 헬퍼로 통합해 중복 이벤트/요청 구성을 제거
   - `call_tool` 시 shell 명령 실행 결과(stdout/stderr/exit code)를 worker에 재주입
   - `ask` 시 사용자 YES/NO 응답을 받아 동일 세션에서 증거 수집 계속 진행
   - `finalize` 시 main 모델이 증거 + planning 문맥으로 충분성 판단 후 `finalize/continue` 결정

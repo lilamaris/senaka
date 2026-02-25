@@ -69,6 +69,54 @@ async function buildFinalAnswerFromDecision(params: {
   }
 }
 
+async function requestMainDecision(params: {
+  deps: LoopDependencies;
+  runtime: LoopRuntime;
+  phase: "assess-sufficiency" | "forced-synthesis";
+  evidenceSummary: string[];
+  forceFinalize: boolean;
+  enableThinkOverride?: boolean;
+}): Promise<MainDecision> {
+  params.deps.options?.onEvent?.({
+    type: "main-start",
+    phase: params.phase,
+    evidenceCount: params.runtime.evidence.length,
+  });
+  return askMainForDecision({
+    config: params.deps.config,
+    allowStreaming: params.deps.routed.stream,
+    goal: params.deps.goal,
+    evidenceSummary: params.evidenceSummary,
+    onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", phase: params.phase, token }),
+    forceFinalize: params.forceFinalize,
+    enableThinkOverride: params.enableThinkOverride,
+    mainModel: params.deps.routed.main,
+  });
+}
+
+async function requestMainFinalReport(params: {
+  deps: LoopDependencies;
+  runtime: LoopRuntime;
+  phase: "forced-synthesis";
+  evidenceSummary: string[];
+  decisionContext?: string;
+  draft?: string;
+  enableThinkOverride?: boolean;
+}): Promise<string> {
+  return askMainForFinalAnswer({
+    config: params.deps.config,
+    goal: params.deps.goal,
+    evidenceSummary: params.evidenceSummary,
+    decisionContext: params.decisionContext,
+    planning: params.runtime.planning,
+    draft: params.draft,
+    allowStreaming: params.deps.routed.stream,
+    onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", phase: params.phase, token }),
+    enableThinkOverride: params.enableThinkOverride,
+    mainModel: params.deps.routed.main,
+  });
+}
+
 /**
  * 루프 시작 planning 단계를 처리한다.
  */
@@ -284,19 +332,16 @@ export async function handleMainDecisionTurn(deps: LoopDependencies, runtime: Lo
     LoopState.AssessSufficiency,
     `assessing evidence sufficiency (evidence=${runtime.evidence.length}) to finalize or continue`,
   );
-  deps.options?.onEvent?.({ type: "main-start", phase: "assess-sufficiency", evidenceCount: runtime.evidence.length });
   const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   let decision: MainDecision;
   try {
-    decision = await askMainForDecision({
-      config: deps.config,
-      allowStreaming: deps.routed.stream,
-      goal: deps.goal,
+    decision = await requestMainDecision({
+      deps,
+      runtime,
+      phase: "assess-sufficiency",
       evidenceSummary,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "assess-sufficiency", token }),
       forceFinalize: false,
-      mainModel: deps.routed.main,
     });
   } catch (error) {
     const reason = (error as Error).message;
@@ -346,31 +391,25 @@ export async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: L
     LoopState.ForcedSynthesis,
     runtime.forcedSynthesisReason?.trim() || "forced synthesis path triggered; skip more evidence and produce final answer",
   );
-  deps.options?.onEvent?.({ type: "main-start", phase: "forced-synthesis", evidenceCount: runtime.evidence.length });
   const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   try {
-    const decision = await askMainForDecision({
-      config: deps.config,
-      allowStreaming: deps.routed.stream,
-      goal: deps.goal,
+    const decision = await requestMainDecision({
+      deps,
+      runtime,
+      phase: "forced-synthesis",
       evidenceSummary,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "forced-synthesis", token }),
       forceFinalize: true,
       enableThinkOverride: runtime.forcedSynthesisEnableThink,
-      mainModel: deps.routed.main,
     });
-    runtime.finalAnswer = await askMainForFinalAnswer({
-      config: deps.config,
-      goal: deps.goal,
+    runtime.finalAnswer = await requestMainFinalReport({
+      deps,
+      runtime,
+      phase: "forced-synthesis",
       evidenceSummary,
       decisionContext: summarizeDecisionContext(decision),
-      planning: runtime.planning,
       draft: decision.answer?.trim(),
-      allowStreaming: deps.routed.stream,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "forced-synthesis", token }),
       enableThinkOverride: runtime.forcedSynthesisEnableThink,
-      mainModel: deps.routed.main,
     });
     deps.options?.onEvent?.({ type: "main-decision", phase: "forced-synthesis", decision: "finalize" });
     deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
