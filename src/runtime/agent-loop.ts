@@ -8,6 +8,9 @@ import { saveSession } from "./session-store.js";
 import { runInSandbox } from "./sandbox-executor.js";
 import { resolveChatCompletionApi } from "../adapter/api/index.js";
 const WORKER_SYSTEM_PROMPT_PATH = "data/worker/SYSTEM.md";
+const MAX_WORKER_ACTION_RETRIES = 2;
+const MAX_MAIN_DECISION_RETRIES = 2;
+const MAX_FINAL_ANSWER_RETRIES = 2;
 
 interface WorkerToolCall {
   action: "call_tool";
@@ -179,6 +182,66 @@ function parseMainDecision(raw: string): MainDecision {
   };
 }
 
+function buildStructuredRepairPrompt(kind: "worker-action" | "main-decision", error: string): ChatMessage {
+  if (kind === "worker-action") {
+    return {
+      role: "user",
+      content: [
+        `Your previous output was invalid: ${error}`,
+        "Re-output EXACTLY one valid JSON object for worker action.",
+        "No code block, no explanation, no extra text.",
+      ].join("\n"),
+    };
+  }
+
+  return {
+    role: "user",
+    content: [
+      `Your previous output was invalid: ${error}`,
+      "Re-output EXACTLY one valid JSON object with decision finalize|continue.",
+      "No code block, no explanation, no extra text.",
+    ].join("\n"),
+  };
+}
+
+function looksLikeStructuredOutput(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return true;
+  }
+  if (trimmed.startsWith("```")) {
+    return true;
+  }
+  return /"decision"\s*:|"action"\s*:|"answer"\s*:/.test(trimmed);
+}
+
+function tryExtractAnswerField(text: string): string | undefined {
+  try {
+    const parsed = JSON.parse(extractJsonObject(text)) as Record<string, unknown>;
+    for (const key of ["answer", "final_answer", "response", "final"]) {
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return undefined;
+}
+
+function fallbackFinalAnswer(goal: string, evidenceSummary: string[]): string {
+  return [
+    `Goal: ${goal}`,
+    "Final status: evidence gathered but final narrative formatting was unstable.",
+    "Key evidence:",
+    ...(evidenceSummary.length > 0 ? evidenceSummary.map((e, i) => `${i + 1}. ${e}`) : ["1. none"]),
+  ].join("\n");
+}
+
 function validateCommandSafety(cmd: string): void {
   const lowered = cmd.toLowerCase();
   const denied = [" rm ", "delete", " drop ", "wipe", "shutdown", "reboot", "mkfs", " dd ", " kill ", "pkill", "git push"];
@@ -322,13 +385,132 @@ async function askMainForDecision(params: {
   forceFinalize: boolean;
   mainModel: ResolvedModelCandidate;
 }): Promise<MainDecision> {
-  const messages = buildMainDecisionMessages(params.goal, params.evidenceSummary, params.forceFinalize);
+  const baseMessages = buildMainDecisionMessages(params.goal, params.evidenceSummary, params.forceFinalize);
   const mainApi = resolveChatCompletionApi(params.mainModel);
-  const reply = params.routedStream
-    ? await mainApi.stream({ messages }, { onToken: params.onToken })
-    : await mainApi.complete({ messages });
+  let messages = baseMessages;
 
-  return parseMainDecision(reply.content);
+  for (let attempt = 0; attempt <= MAX_MAIN_DECISION_RETRIES; attempt += 1) {
+    const reply =
+      attempt === 0 && params.routedStream
+        ? await mainApi.stream({ messages }, { onToken: params.onToken })
+        : await mainApi.complete({ messages });
+
+    try {
+      return parseMainDecision(reply.content);
+    } catch (error) {
+      if (attempt >= MAX_MAIN_DECISION_RETRIES) {
+        throw error;
+      }
+
+      const reason = (error as Error).message;
+      messages = [
+        ...baseMessages,
+        { role: "assistant", content: reply.content },
+        buildStructuredRepairPrompt("main-decision", reason),
+      ];
+    }
+  }
+
+  throw new Error("main decision retries exhausted");
+}
+
+async function askWorkerForAction(params: {
+  step: number;
+  routedStream: boolean;
+  model: ResolvedModelCandidate;
+  workerMessages: ChatMessage[];
+  onToken?: (token: string) => void;
+}): Promise<WorkerAction> {
+  const workerApi = resolveChatCompletionApi(params.model);
+  const baseMessages = params.workerMessages;
+  let messages = baseMessages;
+
+  for (let attempt = 0; attempt <= MAX_WORKER_ACTION_RETRIES; attempt += 1) {
+    const reply =
+      attempt === 0 && params.routedStream
+        ? await workerApi.stream({ messages }, { onToken: params.onToken })
+        : await workerApi.complete({ messages });
+
+    try {
+      return parseWorkerAction(reply.content);
+    } catch (error) {
+      if (attempt >= MAX_WORKER_ACTION_RETRIES) {
+        throw new Error(`worker action schema validation failed at step ${params.step}: ${(error as Error).message}`);
+      }
+
+      const reason = (error as Error).message;
+      messages = [
+        ...baseMessages,
+        { role: "assistant", content: reply.content },
+        buildStructuredRepairPrompt("worker-action", reason),
+      ];
+    }
+  }
+
+  throw new Error(`worker action retries exhausted at step ${params.step}`);
+}
+
+function buildMainFinalAnswerMessages(goal: string, evidenceSummary: string[], draft?: string): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You are the final reporter for the Evidence Loop.",
+        "Return plain text only.",
+        "Do NOT output JSON, code blocks, XML, or key-value schemas.",
+        "Write a concise final answer grounded in the evidence.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        `Goal: ${goal}`,
+        "Evidence summary:",
+        ...(evidenceSummary.length > 0 ? evidenceSummary.map((e, i) => `${i + 1}. ${e}`) : ["none"]),
+        draft ? `Draft answer (may be malformed): ${draft}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+}
+
+async function askMainForFinalAnswer(params: {
+  goal: string;
+  evidenceSummary: string[];
+  draft?: string;
+  mainModel: ResolvedModelCandidate;
+}): Promise<string> {
+  const mainApi = resolveChatCompletionApi(params.mainModel);
+  const baseMessages = buildMainFinalAnswerMessages(params.goal, params.evidenceSummary, params.draft);
+  let messages = baseMessages;
+
+  for (let attempt = 0; attempt <= MAX_FINAL_ANSWER_RETRIES; attempt += 1) {
+    const reply = await mainApi.complete({ messages });
+    const direct = reply.content.trim();
+    const extracted = tryExtractAnswerField(direct);
+    const candidate = (extracted || direct).trim();
+
+    if (candidate && !looksLikeStructuredOutput(candidate)) {
+      return candidate;
+    }
+
+    if (attempt >= MAX_FINAL_ANSWER_RETRIES) {
+      break;
+    }
+
+    messages = [
+      ...baseMessages,
+      { role: "assistant", content: reply.content },
+      {
+        role: "user",
+        content:
+          "Invalid format: your answer still looks structured. Re-write in plain natural language only with no JSON/code blocks.",
+      },
+    ];
+  }
+
+  return fallbackFinalAnswer(params.goal, params.evidenceSummary);
 }
 
 export async function runAgentLoop(
@@ -374,14 +556,13 @@ export async function runAgentLoop(
       recentUserAnswer,
     });
 
-    const workerApi = resolveChatCompletionApi(routed.worker);
-    const workerReply = routed.stream
-      ? await workerApi.stream({ messages: workerMessages }, {
-          onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
-        })
-      : await workerApi.complete({ messages: workerMessages });
-
-    const action = parseWorkerAction(workerReply.content);
+    const action = await askWorkerForAction({
+      step,
+      routedStream: routed.stream,
+      model: routed.worker,
+      workerMessages,
+      onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
+    });
 
     if (action.action === "call_tool") {
       options?.onEvent?.({ type: "worker-action", step, action: "call_tool", detail: action.reason });
@@ -460,7 +641,16 @@ export async function runAgentLoop(
     options?.onEvent?.({ type: "main-decision", decision: decision.decision, guidance: decision.guidance });
 
     if (decision.decision === "finalize") {
-      finalAnswer = decision.answer?.trim() || "main model finalized without explicit answer";
+      const draft = decision.answer?.trim();
+      finalAnswer =
+        draft && !looksLikeStructuredOutput(draft)
+          ? draft
+          : await askMainForFinalAnswer({
+              goal,
+              evidenceSummary,
+              draft,
+              mainModel: routed.main,
+            });
       break;
     }
 
@@ -486,7 +676,16 @@ export async function runAgentLoop(
       mainModel: routed.main,
     });
 
-    finalAnswer = decision.answer?.trim() || "finalize fallback completed without answer";
+    const fallbackDraft = decision.answer?.trim();
+    finalAnswer =
+      fallbackDraft && !looksLikeStructuredOutput(fallbackDraft)
+        ? fallbackDraft
+        : await askMainForFinalAnswer({
+            goal,
+            evidenceSummary: summarizeEvidenceForMain(evidence),
+            draft: fallbackDraft,
+            mainModel: routed.main,
+          });
     options?.onEvent?.({ type: "main-decision", decision: "finalize" });
   }
 
