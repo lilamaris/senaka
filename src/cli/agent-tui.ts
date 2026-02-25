@@ -24,9 +24,18 @@ interface TuiState {
   lines: string[];
   workerView: StreamView;
   mainView: StreamView;
+  toolTraceByStep: Record<number, { reason?: string; cmd?: string }>;
 }
 
 const ANSI_GRAY = "\x1b[90m";
+const ANSI_CYAN = "\x1b[36m";
+const ANSI_BLUE = "\x1b[34m";
+const ANSI_GREEN = "\x1b[32m";
+const ANSI_YELLOW = "\x1b[33m";
+const ANSI_RED = "\x1b[31m";
+const ANSI_BOLD = "\x1b[1m";
+const ANSI_BG_USER = "\x1b[48;5;24m";
+const ANSI_WHITE = "\x1b[97m";
 const ANSI_RESET = "\x1b[0m";
 
 function now(): string {
@@ -89,11 +98,39 @@ function wrapParagraphs(text: string, width: number): string[] {
   return out;
 }
 
-function pushLine(state: TuiState, text: string): void {
-  state.lines.push(`[${now()}] ${text}`);
+function paint(text: string, ...styles: string[]): string {
+  return `${styles.join("")}${text}${ANSI_RESET}`;
+}
+
+function trimOneLine(text: string, maxLen = 180): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (one.length <= maxLen) {
+    return one || "<empty>";
+  }
+  return `${one.slice(0, maxLen)}...`;
+}
+
+function firstNonEmptyLine(text: string): string {
+  const line = text
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => value.length > 0);
+  return line ?? "<empty>";
+}
+
+function pushRawLine(state: TuiState, text: string): void {
+  state.lines.push(text);
   if (state.lines.length > 350) {
     state.lines = state.lines.slice(-350);
   }
+}
+
+function pushLine(state: TuiState, text: string): void {
+  pushRawLine(state, `[${now()}] ${text}`);
+}
+
+function pushSpacer(state: TuiState): void {
+  pushRawLine(state, "");
 }
 
 function separator(char: string, width: number): string {
@@ -101,7 +138,7 @@ function separator(char: string, width: number): string {
 }
 
 function renderStreamSection(title: string, view: StreamView, width: number, grayThink = false): string[] {
-  const out: string[] = [`[${title}]`];
+  const out: string[] = [paint(`[${title}]`, ANSI_BOLD, ANSI_CYAN)];
   const bodyWidth = Math.max(40, width - 4);
 
   if (!view.raw.trim()) {
@@ -130,27 +167,30 @@ function render(state: TuiState): void {
   const midSep = separator("-", width);
 
   output.write("\x1b[2J\x1b[H");
-  output.write("Senaka Agent TUI\n");
+  output.write(paint("Senaka Agent TUI", ANSI_BOLD, ANSI_CYAN) + "\n");
   output.write(
-    `session=${state.sessionId} group=${state.groupId ?? state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}\n`,
+    paint(
+      `session=${state.sessionId} group=${state.groupId ?? state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}`,
+      ANSI_BLUE,
+    ) + "\n",
   );
-  output.write(topSep + "\n");
+  output.write(paint(topSep, ANSI_BLUE) + "\n");
 
   for (const line of state.lines.slice(-80)) {
     output.write(line + "\n");
   }
 
-  output.write(midSep + "\n");
+  output.write(paint(midSep, ANSI_BLUE) + "\n");
   for (const line of renderStreamSection("WORKER STREAM", state.workerView, width)) {
     output.write(line + "\n");
   }
 
-  output.write(midSep + "\n");
+  output.write(paint(midSep, ANSI_BLUE) + "\n");
   for (const line of renderStreamSection("MAIN STREAM", state.mainView, width, true)) {
     output.write(line + "\n");
   }
 
-  output.write(topSep + "\n");
+  output.write(paint(topSep, ANSI_BLUE) + "\n");
   output.write(
     "Commands: /agent ID, /group ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit\n",
   );
@@ -160,40 +200,59 @@ function render(state: TuiState): void {
 function onEvent(state: TuiState, event: AgentLoopEvent): void {
   if (event.type === "start") {
     state.turn += 1;
-    pushLine(state, `================ TURN ${state.turn} START ================`);
-    pushLine(state, `run start: agent=${event.agentId} mode=${event.mode} goal=${event.goal}`);
+    state.toolTraceByStep = {};
+    pushLine(state, paint(`=== TURN ${state.turn} START ===`, ANSI_BOLD, ANSI_CYAN));
+    pushLine(
+      state,
+      paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
+    );
   } else if (event.type === "worker-start") {
-    pushLine(state, `worker step ${event.step} started`);
+    pushLine(state, paint(`worker step ${event.step} started`, ANSI_BLUE));
   } else if (event.type === "worker-token") {
     state.workerView = appendToken(state.workerView, event.token);
   } else if (event.type === "worker-action") {
-    pushLine(state, `worker action(${event.step}): ${event.action} :: ${event.detail}`);
+    if (event.action === "call_tool") {
+      state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), reason: event.detail };
+    } else {
+      pushLine(state, `worker action(${event.step}): ${event.action} :: ${event.detail}`);
+    }
   } else if (event.type === "tool-start") {
-    pushLine(state, `tool start(${event.step}): ${event.cmd}`);
+    state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), cmd: event.cmd };
   } else if (event.type === "tool-result") {
+    const trace = state.toolTraceByStep[event.step] ?? {};
+    pushLine(state, paint(`Evidence Loop step ${event.step}`, ANSI_BOLD, ANSI_YELLOW));
+    pushLine(state, paint(`  reason: ${trimOneLine(trace.reason ?? "<missing reason>")}`, ANSI_YELLOW));
+    pushLine(state, paint(`  cmd   : ${trimOneLine(trace.cmd ?? "<missing cmd>", 260)}`, ANSI_WHITE));
     pushLine(
       state,
-      `tool result(${event.step}): exit=${event.exitCode}, runner=${event.runner}, group=${event.workspaceGroupId}`,
+      paint(
+        `  result: exit=${event.exitCode} runner=${event.runner} group=${event.workspaceGroupId}`,
+        event.exitCode === 0 ? ANSI_GREEN : ANSI_RED,
+      ),
     );
-    if (event.stdout.trim()) {
-      pushLine(state, `tool stdout(${event.step}): ${event.stdout.split("\n")[0]}`);
-    }
+    pushLine(state, `  stdout: ${trimOneLine(firstNonEmptyLine(event.stdout), 240)}`);
     if (event.stderr.trim()) {
-      pushLine(state, `tool stderr(${event.step}): ${event.stderr.split("\n")[0]}`);
+      pushLine(state, paint(`  stderr: ${trimOneLine(firstNonEmptyLine(event.stderr), 240)}`, ANSI_RED));
     }
   } else if (event.type === "ask") {
-    pushLine(state, `worker ask(${event.step}): ${event.question}`);
+    pushLine(state, paint(`worker ask(${event.step}): ${event.question}`, ANSI_YELLOW));
   } else if (event.type === "ask-answer") {
-    pushLine(state, `ask answer(${event.step}): ${event.answer}`);
+    pushLine(state, paint(`ask answer(${event.step}): ${event.answer}`, ANSI_GREEN));
   } else if (event.type === "main-start") {
-    pushLine(state, `main synthesis started with evidence=${event.evidenceCount}`);
+    pushLine(state, paint(`main synthesis started with evidence=${event.evidenceCount}`, ANSI_BLUE));
   } else if (event.type === "main-token") {
     state.mainView = appendToken(state.mainView, event.token);
   } else if (event.type === "main-decision") {
-    pushLine(state, `main decision: ${event.decision}${event.guidance ? ` :: ${event.guidance}` : ""}`);
+    pushLine(
+      state,
+      paint(
+        `main decision: ${event.decision}${event.guidance ? ` :: ${trimOneLine(event.guidance, 220)}` : ""}`,
+        event.decision === "finalize" ? ANSI_GREEN : ANSI_YELLOW,
+      ),
+    );
   } else if (event.type === "complete") {
-    pushLine(state, `run complete: steps=${event.steps}, evidence=${event.evidenceCount}`);
-    pushLine(state, `================= TURN ${state.turn} END =================`);
+    pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
+    pushLine(state, paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN));
   }
 
   render(state);
@@ -213,6 +272,7 @@ async function main(): Promise<void> {
     lines: [],
     workerView: createView(),
     mainView: createView(),
+    toolTraceByStep: {},
   };
 
   const rl = readline.createInterface({ input, output });
@@ -315,6 +375,12 @@ async function main(): Promise<void> {
     state.busy = true;
     state.workerView = createView();
     state.mainView = createView();
+    pushSpacer(state);
+    pushRawLine(state, paint(" USER GOAL ", ANSI_BG_USER, ANSI_WHITE, ANSI_BOLD));
+    for (const wrapped of wrapParagraphs(line, Math.max(40, (output.columns || 100) - 10))) {
+      pushRawLine(state, paint(` ${wrapped}`, ANSI_BG_USER, ANSI_WHITE));
+    }
+    pushSpacer(state);
     render(state);
 
     try {
