@@ -35,7 +35,7 @@
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
   - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`, `src/cli/models-list.ts`
-  - TUI 구성: `src/cli/agent-tui.ts`, `src/cli/agent-tui-view.ts`, `src/cli/agent-tui-events.ts`
+  - TUI 구성: `src/cli/agent-tui.ts` (상태 흐름 선형 로그 출력)
   - planning 기반 조건부 전이 + context compaction 상태 머신
 
 ## 문서 네비게이션
@@ -161,10 +161,10 @@ TUI 명령:
 스트리밍:
 - `agent:run`, `agent:tui`는 기본적으로 chat completion 스트리밍을 사용합니다.
 - 비활성화: `npm run agent:run -- --agent default --goal "<목표>" --no-stream`
-- `agent:tui`에서는 생성 중 토큰이 `WORKER STREAM`, `MAIN STREAM` 섹션에 무절단으로 실시간 표시됩니다.
-- `<think>...</think>`가 포함된 경우 `THINK PHASE`와 `FINAL RESPONSE` 단락으로 분리해서 표시합니다.
+- `agent:tui`는 상태 머신 흐름을 따라 위→아래로 로그를 누적 출력합니다.
+- `worker-token` raw JSON 스트림은 숨기고, 도구 호출/결과를 구조화된 로그로 출력합니다.
+- `main-token`은 phase별(`main(<phase>)>`) 선형 스트림으로 출력됩니다.
 - 각 실행 턴은 `TURN N START/END` 구분선으로 명확히 분리됩니다.
-- TUI 렌더러는 전체 스크린 clear가 아닌 라인 diff 갱신 + 토큰 렌더 스로틀(약 30fps)로 플리커링을 줄입니다.
 
 Planning/Compaction 관측:
 - `agent:run`, `agent:tui`에서 planning 이벤트(`planning-start`, `planning-result`)를 출력합니다.

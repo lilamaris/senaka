@@ -9,9 +9,7 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 모듈 구성
 - `src/cli/*.ts`: 명령 진입점, 스트리밍 출력, 수동 제어(현재 구현)
-  - `agent-tui.ts`: interactive 실행 루프와 사용자 입력 처리
-  - `agent-tui-view.ts`: 화면 렌더링/상태 유틸
-  - `agent-tui-events.ts`: 이벤트 -> 상태 리듀서
+  - `agent-tui.ts`: interactive 실행 루프 + 상태 흐름 선형 로그 렌더
 - `interfaces/webui`: 세션 대시보드, 증거/로그/설정 UI(계획)
 - `interfaces/shared-client`: 공통 API/이벤트 구독 클라이언트(계획)
 
@@ -40,11 +38,10 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 - 루프 최대 step override(`/steps N|auto`)
 - 스트리밍 override(`/stream on|off|auto`)
 - 세션 전환(`/session ID`)
-- worker/main 토큰 생성 스트리밍 무절단 실시간 확인(`WORKER STREAM`, `MAIN STREAM`)
-- think 모델 출력은 `THINK PHASE` / `FINAL RESPONSE` 단락 분리
+- 상태 머신 단계(`PlanIntent`~`Done`)를 위→아래 선형 로그로 출력
+- `worker-token` raw JSON 스트림을 숨기고, 도구 호출/결과는 구조화 로그로 출력
+- main 스트림은 `main(<phase>)>` 프리픽스로 연속 출력
 - 턴 간 구분선(`TURN N START/END`)으로 실행 경계 표시
-- 렌더 방식은 전체 화면 clear 재출력이 아니라 프레임 라인 diff 갱신
-- 토큰 이벤트는 스로틀 렌더링(약 30fps)으로 플리커링 완화
 
 ## 현재 CLI 단일 실행 기능
 - `agent:run`은 worker `ask` 액션 발생 시 `answer(YES/NO)>`로 사용자 응답 수집
