@@ -16,6 +16,7 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
   - provider별 구현체 선택 팩토리
 - `src/adapter/api/openai.ts`
   - OpenAI/OpenAI-compatible 구현체
+  - complete/stream 공통 HTTP 호출 경로와 에러 처리 재사용
 - `src/llm/openai-compatible.ts`
   - 기존 호출 경로 호환 래퍼
 - `config/model-profiles.json`

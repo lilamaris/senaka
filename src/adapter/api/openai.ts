@@ -187,26 +187,37 @@ async function readSSEStream(response: Response, handlers?: StreamHandler): Prom
   return fullText.trim();
 }
 
+async function postChatCompletion(candidate: ResolvedModelCandidate, body: Record<string, unknown>): Promise<Response> {
+  return fetch(toEndpoint(candidate.baseUrl), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${candidate.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function requestOpenAIResponse(
+  candidate: ResolvedModelCandidate,
+  body: Record<string, unknown>,
+  errorPrefix: string,
+): Promise<Response> {
+  const response = await postChatCompletion(candidate, body);
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`${errorPrefix} (${response.status}): ${errorBody}`);
+  }
+  return response;
+}
+
 class OpenAIChatCompletionApi implements ChatCompletionApi {
   constructor(private readonly candidate: ResolvedModelCandidate) {}
 
   async complete(request: CompletionRequest): Promise<ChatCompletionResponse> {
     const body = toRequestBody(this.candidate, request, false);
     debugLogRequest({ candidate: this.candidate, request, body, stream: false });
-    const response = await fetch(toEndpoint(this.candidate.baseUrl), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.candidate.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`LLM request failed (${response.status}): ${errorBody}`);
-    }
-
+    const response = await requestOpenAIResponse(this.candidate, body, "LLM request failed");
     const data = (await response.json()) as OpenAICompatibleResponse;
     const content = data.choices?.[0]?.message?.content?.trim();
 
@@ -220,20 +231,7 @@ class OpenAIChatCompletionApi implements ChatCompletionApi {
   async stream(request: CompletionRequest, handlers?: StreamHandler): Promise<ChatCompletionResponse> {
     const body = toRequestBody(this.candidate, request, true);
     debugLogRequest({ candidate: this.candidate, request, body, stream: true });
-    const response = await fetch(toEndpoint(this.candidate.baseUrl), {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.candidate.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`LLM stream request failed (${response.status}): ${errorBody}`);
-    }
-
+    const response = await requestOpenAIResponse(this.candidate, body, "LLM stream request failed");
     const content = await readSSEStream(response, handlers);
     if (!content) {
       throw new Error("LLM stream did not contain assistant content");
