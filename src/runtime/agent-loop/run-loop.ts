@@ -44,12 +44,12 @@ import type { AgentLoopOptions, AgentRunResult, EvidenceItem, MainDecision, Plan
  * 5) finalize 시 최종 리포트 생성 후 세션/이벤트로 반환
  */
 enum LoopState {
-  Planning = "planning",
-  CompactContext = "compact-context",
-  CollectEvidence = "collect-evidence",
-  ReviewEvidence = "review-evidence",
-  ForceFinalize = "force-finalize",
-  Complete = "complete",
+  PlanIntent = "plan-intent",
+  ContextGuard = "context-guard",
+  AcquireEvidence = "acquire-evidence",
+  AssessSufficiency = "assess-sufficiency",
+  ForcedSynthesis = "forced-synthesis",
+  Done = "done",
 }
 
 const DEFAULT_CONTEXT_LENGTH = 8192;
@@ -411,11 +411,11 @@ async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime):
   );
 
   if (planning.next === "collect_evidence") {
-    return LoopState.CollectEvidence;
+    return LoopState.AcquireEvidence;
   }
 
   if (planning.next === "main_decision") {
-    return LoopState.ReviewEvidence;
+    return LoopState.AssessSufficiency;
   }
 
   const evidenceSummary = summarizeDecisionEvidence(runtime);
@@ -437,7 +437,7 @@ async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime):
   }
 
   deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
-  return LoopState.Complete;
+  return LoopState.Done;
 }
 
 /**
@@ -484,7 +484,7 @@ async function buildFinalAnswerFromDecision(params: {
  */
 async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
   if (runtime.step > deps.routed.maxSteps) {
-    return LoopState.ForceFinalize;
+    return LoopState.ForcedSynthesis;
   }
 
   runtime.steps = runtime.step;
@@ -517,7 +517,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
     deps.options?.onEvent?.({ type: "worker-action", step: runtime.step, action: "finalize", detail: fallbackGuidance });
     runtime.evidence.push({ kind: "main_guidance", summary: fallbackGuidance });
     await appendSystemEntry(deps.config, deps.session, `[WORKER_VALIDATION_FAIL_${runtime.step}] ${reason}`);
-    return LoopState.ForceFinalize;
+    return LoopState.ForcedSynthesis;
   }
 
   // 분기 1) worker가 셸 증거 수집을 요청한 경우
@@ -556,7 +556,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
       { role: "system", content: `[WORKER_TOOL_RESULT_${runtime.step}] exit=${result.exitCode}` },
     ]);
     runtime.step += 1;
-    return LoopState.CollectEvidence;
+    return LoopState.AcquireEvidence;
   }
 
   // 분기 2) worker가 사용자에게 YES/NO 확인을 요청한 경우
@@ -578,7 +578,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
       { role: "user", content: `[WORKER_ASK_ANSWER_${runtime.step}] ${answer}` },
     ]);
     runtime.step += 1;
-    return LoopState.CollectEvidence;
+    return LoopState.AcquireEvidence;
   }
 
   // 분기 3) worker가 수집 완료를 선언한 경우(main 판단 단계로 이동)
@@ -588,7 +588,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
     action: "finalize",
     detail: "worker requested finalize",
   });
-  return LoopState.ReviewEvidence;
+  return LoopState.AssessSufficiency;
 }
 
 /**
@@ -619,7 +619,7 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
     await appendSystemEntry(deps.config, deps.session, `[MAIN_DECISION_FAIL_${runtime.step}] ${reason}`);
     deps.options?.onEvent?.({ type: "main-decision", decision: "continue", guidance: runtime.guidance });
     runtime.step += 1;
-    return LoopState.CollectEvidence;
+    return LoopState.AcquireEvidence;
   }
 
   deps.options?.onEvent?.({
@@ -634,7 +634,7 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
     runtime.evidence.push({ kind: "main_guidance", summary: runtime.guidance });
     await appendSystemEntry(deps.config, deps.session, `[MAIN_GUIDANCE_${runtime.step}] ${runtime.guidance}`);
     runtime.step += 1;
-    return LoopState.CollectEvidence;
+    return LoopState.AcquireEvidence;
   }
 
   runtime.finalAnswer = await buildFinalAnswerFromDecision({
@@ -644,7 +644,7 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
     evidenceSummary,
   });
   deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
-  return LoopState.Complete;
+  return LoopState.Done;
 }
 
 /**
@@ -686,7 +686,7 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
     deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
   }
 
-  return LoopState.Complete;
+  return LoopState.Done;
 }
 
 /**
@@ -717,9 +717,9 @@ export async function runAgentLoop(
     finalAnswer: "",
     steps: 0,
     step: 1,
-    resumeStateAfterCompaction: LoopState.Planning,
+    resumeStateAfterCompaction: LoopState.PlanIntent,
   };
-  let state: LoopState = LoopState.Planning;
+  let state: LoopState = LoopState.PlanIntent;
   const deps: LoopDependencies = {
     config,
     session,
@@ -734,36 +734,36 @@ export async function runAgentLoop(
   options?.onEvent?.({ type: "start", agentId, mode: routed.mode, goal });
   await appendSessionEntries(config, session, [{ role: "user", content: `[AGENT_GOAL:${agentId}] ${goal}` }]);
 
-  while (state !== LoopState.Complete) {
+  while (state !== LoopState.Done) {
     const plan = computeCompactionPlan(session, deps.contextLimitTokens);
-    if (state !== LoopState.CompactContext && plan.shouldCompact && plan.signature !== runtime.lastCompactionSignature) {
+    if (state !== LoopState.ContextGuard && plan.shouldCompact && plan.signature !== runtime.lastCompactionSignature) {
       runtime.resumeStateAfterCompaction = state;
-      state = LoopState.CompactContext;
+      state = LoopState.ContextGuard;
       continue;
     }
 
-    if (state === LoopState.CompactContext) {
+    if (state === LoopState.ContextGuard) {
       state = await handleContextCompaction(deps, runtime);
       continue;
     }
 
-    if (state === LoopState.Planning) {
+    if (state === LoopState.PlanIntent) {
       state = await handlePlanningTurn(deps, runtime);
       continue;
     }
 
     // 상태별 핸들러를 분리해 루프 본체는 "전이 제어"만 담당한다.
-    if (state === LoopState.CollectEvidence) {
+    if (state === LoopState.AcquireEvidence) {
       state = await handleWorkerTurn(deps, runtime);
       continue;
     }
 
-    if (state === LoopState.ReviewEvidence) {
+    if (state === LoopState.AssessSufficiency) {
       state = await handleMainDecisionTurn(deps, runtime);
       continue;
     }
 
-    if (state === LoopState.ForceFinalize) {
+    if (state === LoopState.ForcedSynthesis) {
       state = await handleForceFinalizeTurn(deps, runtime);
     }
   }

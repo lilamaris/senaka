@@ -29,6 +29,8 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 현재 CLI TUI 기능
 - `npm run agent:tui`로 목표 기반 agent loop 실행
+- planning 단계 및 전이 결과(`planning-start`, `planning-result`) 표시
+- context compaction 시작/완료(`compaction-start`, `compaction-complete`) 표시
 - agent 설정 전환(`/agent <id>`)
 - 그룹 워크스페이스 전환(`/group <id>`)
 - worker/main 분리 모드 override(`/mode main-worker|single-main|auto`)
@@ -41,4 +43,5 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 
 ## 현재 CLI 단일 실행 기능
 - `agent:run`은 worker `ask` 액션 발생 시 `answer(YES/NO)>`로 사용자 응답 수집
+- `agent:run`은 planning/compaction 이벤트를 표준 출력에 로그로 표시
 - 실행 종료 후 모델/step/증거 요약과 최종 응답 출력

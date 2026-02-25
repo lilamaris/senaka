@@ -4,7 +4,7 @@
 사용자가 시스템 내부 동작을 충분히 관측하고 디버깅 가능하도록 구성.
 
 ## TODO
-- [ ] 이벤트 버스 스키마 정의(step/model/tool/session)
+- [x] 이벤트 버스 스키마 정의(step/model/tool/session + planning/compaction/final-answer)
 - [ ] 실시간 trace 스트리밍 채널 구현(CLI/WebUI 공용)
 - [ ] think-token/추론 메타 노출 가능 모델 목록화
 - [ ] 비밀정보 마스킹 정책(최소 마스킹) 구현

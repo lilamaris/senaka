@@ -9,8 +9,10 @@
 shell 기반 도구 호출과 MCP 호환 도구 호출을 단일 인터페이스로 제공.
 
 ## 모듈 구성
-- `src/runtime/agent-loop.ts`
+- `src/runtime/agent-loop/run-loop.ts`
   - worker `call_tool` 액션 파싱
+  - planning/decision 맥락과 함께 tool 결과를 증거로 누적
+- `src/runtime/agent-loop/llm.ts`
   - 샌드박스 실행기 호출 + timeout/buffer 제한
   - 위험 키워드 차단 및 파이프 개수 제한
 - `src/runtime/sandbox-executor.ts`

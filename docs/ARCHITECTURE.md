@@ -5,6 +5,8 @@
 ## 목표
 - 최소 맥락 주입으로 안정적인 에이전트 루프 운용
 - Worker(증거 수집) / Main(최종 요약) 분리 가능 구조
+- 증거 수집이 불필요한 요청은 planning 단계에서 바로 판단/응답으로 전이
+- 모델 컨텍스트 초과 전에 대화 compaction으로 실행 안정성 확보
 - CLI/WebUI 양쪽 제어 표면 지원
 - 도구 호출의 단순화(특히 stdout/stderr 중심 증거 모델)
 - MCP tool API 호환성 확보
@@ -58,16 +60,19 @@
 ## 모듈 간 흐름(요약)
 1. 사용자 목표 입력(CLI/WebUI)
 2. Agent Orchestrator가 루프 시작 및 역할 모델 선택
-3. Worker 모델이 도구 호출로 증거 수집(stdout/stderr 중심)
-4. Evidence Pipeline이 증거 정규화/검증/상태 반영
-5. Main 모델이 최종 요약/보고 생성
-6. Observability가 전 과정 이벤트를 사용자에게 노출
+3. `PlanIntent` 단계에서 `AcquireEvidence`/`AssessSufficiency`/즉시 최종 보고 중 다음 전이를 결정
+4. `ContextGuard` 단계가 필요 시 세션을 compaction하여 컨텍스트 여유를 복구
+5. `AcquireEvidence`에서 Worker 모델이 도구 호출로 증거 수집(stdout/stderr 중심)
+6. `AssessSufficiency`에서 Main 모델이 `finalize/continue` 판단
+7. `ForcedSynthesis`(예외 경로) 또는 최종 보고 생성 후 종료
+8. Observability가 planning/compaction/worker/main 전 과정을 사용자에게 노출
 
 ## CLI / WebUI 사용 개요
 - CLI
   - 현재 구현: `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
   - 현재 구현: `npm run models:list`, `npm run agent:run -- --agent <id> --goal "<목표>"`
   - 현재 구현: `npm run agent:tui` (로그/입력 기반 TUI)
+  - 현재 구현: planning 이벤트(`planning-start`, `planning-result`)와 context compaction 이벤트를 실시간 출력
   - 현재 구현: worker `ask` 액션 발생 시 `agent:run`/`agent:tui`에서 YES/NO 사용자 확인 입력 지원
   - 계획: 단계별 실행 로그/증거 출력, 수동 개입(재시도/중단) 확장
 - WebUI

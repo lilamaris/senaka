@@ -35,6 +35,7 @@
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
   - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`, `src/cli/models-list.ts`
+  - planning 기반 조건부 전이 + context compaction 상태 머신
 
 ## 문서 네비게이션
 - 라우팅 엔트리: `AGENTS.md`
@@ -119,9 +120,20 @@ Worker 프로토콜:
   - `ask`: YES/NO 질문으로 사용자에게 확인 후 같은 evidence 세션 계속 진행
   - `finalize`: main 모델에 의미 있는 증거 요약 전달 후 finalize/continue 결정
 
+상태 머신(일반 명칭):
+- `PlanIntent`: 요청 성격을 분석해 다음 단계를 `AcquireEvidence`/`AssessSufficiency`/즉시 최종보고로 결정
+- `ContextGuard`: 모델 컨텍스트 한도 초과 전 세션 압축(compaction) 수행
+- `AcquireEvidence`: worker가 `call_tool`/`ask`/`finalize`로 증거 수집
+- `AssessSufficiency`: main이 `finalize/continue` 판단
+- `ForcedSynthesis`: step 초과/검증 실패 시 강제 최종화
+- `Done`: 결과 저장 및 종료
+
 모드:
 - `main-worker`: worker(증거 수집) + main(최종 요약)
 - `single-main`: 단일 모델로 루프 실행
+
+모델 프로파일 메모:
+- `config/model-profiles.json`의 각 model 항목에 `contextLength`를 지정하면 `ContextGuard`의 compaction 임계치 계산에 사용됩니다.
 
 TUI 명령:
 - `/agent <ID>`
@@ -139,6 +151,10 @@ TUI 명령:
 - `agent:tui`에서는 생성 중 토큰이 `WORKER STREAM`, `MAIN STREAM` 섹션에 무절단으로 실시간 표시됩니다.
 - `<think>...</think>`가 포함된 경우 `THINK PHASE`와 `FINAL RESPONSE` 단락으로 분리해서 표시합니다.
 - 각 실행 턴은 `TURN N START/END` 구분선으로 명확히 분리됩니다.
+
+Planning/Compaction 관측:
+- `agent:run`, `agent:tui`에서 planning 이벤트(`planning-start`, `planning-result`)를 출력합니다.
+- 컨텍스트 압축이 발생하면 compaction 이벤트(`compaction-start`, `compaction-complete`)를 출력합니다.
 
 ## 구현 마일스톤
 ### M1. Foundation Runtime

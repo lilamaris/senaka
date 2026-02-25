@@ -11,13 +11,13 @@
 - MCP 호환 호출을 위한 최소 어댑터 인터페이스가 존재한다(기본 호출 성공/실패 처리).
 
 ## 최소 구현 모듈(필수)
-1. Agent Orchestrator (`src/runtime/agent-loop.ts`, `src/runtime/session-store.ts`)
+1. Agent Orchestrator (`src/runtime/agent-loop/run-loop.ts`, `src/runtime/session-store.ts`)
 2. Model Routing & Context Budget (`src/models/role-router.ts`, `src/models/profile-registry.ts`)
 3. API Provider Abstraction (`src/llm/openai-compatible.ts`, `src/runtime/chat-service.ts`)
-4. Tooling Layer - Shell First (`src/runtime/agent-loop.ts` 내부 shell 실행 경로)
-5. Evidence Pipeline (`src/runtime/agent-loop.ts` 증거 요약 + `src/runtime/session-store.ts`)
-6. Main Reporter (`src/runtime/agent-loop.ts` main finalize/continue 판단)
-7. Observability Core (`src/runtime/agent-loop.ts` 이벤트 + `src/cli/agent-tui.ts` 렌더)
+4. Tooling Layer - Shell First (`src/runtime/agent-loop/run-loop.ts` + `src/runtime/agent-loop/llm.ts` 내부 shell 실행 경로)
+5. Evidence Pipeline (`src/runtime/agent-loop/run-loop.ts` 증거 요약 + `src/runtime/session-store.ts`)
+6. Main Reporter (`src/runtime/agent-loop/run-loop.ts` main finalize/continue 판단)
+7. Observability Core (`src/runtime/agent-loop/types.ts` 이벤트 + `src/cli/agent-tui.ts` 렌더)
 8. CLI Control Surface (`src/cli/*.ts`)
 9. MCP Compatibility Shim (`TODO`, 아직 미구현)
 10. Sandbox Group Workspace (`src/runtime/sandbox-executor.ts`)
