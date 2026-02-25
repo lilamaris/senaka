@@ -43,8 +43,11 @@ function toEndpoint(baseUrl: string): string {
 }
 
 function applyThinkingBypassHack(messages: ChatMessage[], tag: string): ChatMessage[] {
-  const idx = messages.findIndex((message) => message.role === "user");
-  if (idx < 0) {
+  const idx = [...messages]
+    .map((message, i) => ({ role: message.role, i }))
+    .reverse()
+    .find((entry) => entry.role === "user")?.i;
+  if (idx === undefined) {
     return messages;
   }
 
@@ -77,8 +80,11 @@ function toRequestBody(candidate: ResolvedModelCandidate, request: CompletionReq
 }
 
 function detectThinkBypassInjection(messages: ChatMessage[], tag: string): boolean {
-  const userIdx = messages.findIndex((message) => message.role === "user");
-  if (userIdx < 0 || userIdx + 1 >= messages.length) {
+  const userIdx = [...messages]
+    .map((message, i) => ({ role: message.role, i }))
+    .reverse()
+    .find((entry) => entry.role === "user")?.i;
+  if (userIdx === undefined || userIdx + 1 >= messages.length) {
     return false;
   }
   const next = messages[userIdx + 1];

@@ -11,7 +11,11 @@
 - `Evidence Loop`(증거 수집 루프): worker가 도구/질문으로 증거를 모으고, main이 계속/종료를 판정하는 반복 실행 구간
 
 ## 모듈 구성
-- `src/runtime/agent-loop.ts`: worker/main 루프 실행, step 제어, 완료 판정
+- `src/runtime/agent-loop.ts`: agent loop 호환 엔트리(export)
+- `src/runtime/agent-loop/run-loop.ts`: 상태 머신 기반 루프 본체
+- `src/runtime/agent-loop/llm.ts`: worker/main LLM 호출, 샌드박스 명령 실행
+- `src/runtime/agent-loop/helpers.ts`: 파싱/검증/프롬프트 빌더
+- `src/runtime/agent-loop/types.ts`: 이벤트/액션/결과 타입
 - `src/runtime/session-store.ts`: 세션 생성/복구/저장
 - `src/models/role-router.ts`: agent 설정 기반 모드/모델 라우팅
 - `src/cli/agent-run.ts`, `src/cli/agent-tui.ts`: 루프 실행 진입점과 사용자 개입 처리
