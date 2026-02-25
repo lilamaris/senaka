@@ -31,7 +31,7 @@
   - OpenAI 호환 provider: `src/llm/openai-compatible.ts`
   - 모델 레지스트리(서버/모델/에이전트): `config/model-profiles.json`, `src/models/profile-registry.ts`
   - 역할 라우팅(agent 블럭 기반): `src/models/role-router.ts`
-  - Agent loop: `src/runtime/agent-loop.ts`, `src/cli/agent-run.ts`
+  - Agent loop: `src/runtime/agent-loop.ts`, `src/runtime/agent-loop/{run-loop,stages,context-guard,loop-state}.ts`, `src/cli/agent-run.ts`
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
   - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`, `src/cli/models-list.ts`

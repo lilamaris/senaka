@@ -33,6 +33,10 @@
 ## 현재 코드 구조(실제 구현)
 - `src/runtime/`
   - `agent-loop.ts`, `chat-service.ts`, `session-store.ts`
+  - `agent-loop/`
+    - `run-loop.ts`(오케스트레이션), `stages.ts`(상태별 핸들러)
+    - `context-guard.ts`(compaction), `loop-state.ts`(공통 상태/세션 유틸)
+    - `llm.ts`, `helpers.ts`, `types.ts`
 - `src/models/`
   - `profile-registry.ts`, `role-router.ts`
 - `src/llm/`

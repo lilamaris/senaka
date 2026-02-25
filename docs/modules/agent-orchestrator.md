@@ -19,7 +19,10 @@
 
 ## 모듈 구성
 - `src/runtime/agent-loop.ts`: agent loop 호환 엔트리(export)
-- `src/runtime/agent-loop/run-loop.ts`: 상태 머신 기반 루프 본체
+- `src/runtime/agent-loop/run-loop.ts`: 상태 전이 오케스트레이터(핸들러 조립)
+- `src/runtime/agent-loop/loop-state.ts`: 루프 공통 상태/세션 append 유틸
+- `src/runtime/agent-loop/context-guard.ts`: context length 기반 compaction 계획/실행
+- `src/runtime/agent-loop/stages.ts`: planning/evidence/decision/finalize 단계 핸들러
 - `src/runtime/agent-loop/llm.ts`: worker/main LLM 호출, 샌드박스 명령 실행
 - `src/runtime/agent-loop/helpers.ts`: 파싱/검증/프롬프트 빌더
 - `src/runtime/agent-loop/types.ts`: 이벤트/액션/결과 타입
@@ -45,7 +48,7 @@
 - WebUI(계획): 목표 입력 후 `Run`으로 동일 루프 실행
 
 ## 현재 구현 상태
-- `src/runtime/agent-loop.ts`
+- `src/runtime/agent-loop/run-loop.ts` + `context-guard.ts` + `stages.ts`
   - planning 단계(`planning-start`, `planning-result`) 기반 초기 전이 결정
   - worker 액션 루프(`call_tool`, `ask`, `finalize`) 기반 증거 수집
   - 컨텍스트 길이 임계치 초과 시 세션 compaction(`context-guard`) 수행
