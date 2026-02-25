@@ -72,6 +72,7 @@ async function main(): Promise<void> {
   const session = await loadOrCreateSession(config.sessionDir, args.sessionId, config.systemPrompt);
   const rl = createInterface({ input, output });
   let mainStreaming = false;
+  let mainStreamingPhase: string | undefined;
 
   /**
    * 루프 이벤트를 CLI 출력으로 투영한다.
@@ -108,9 +109,13 @@ async function main(): Promise<void> {
     }
 
     if (event.type === "main-token") {
-      if (!mainStreaming) {
-        process.stdout.write("\nmain(stream)> ");
+      if (!mainStreaming || mainStreamingPhase !== event.phase) {
+        if (mainStreaming) {
+          process.stdout.write("\n");
+        }
+        process.stdout.write(`\nmain(${event.phase})> `);
         mainStreaming = true;
+        mainStreamingPhase = event.phase;
       }
       process.stdout.write(event.token);
       return;
@@ -119,6 +124,7 @@ async function main(): Promise<void> {
     if (event.type === "final-answer" && mainStreaming) {
       process.stdout.write("\n");
       mainStreaming = false;
+      mainStreamingPhase = undefined;
     }
   };
 
@@ -137,6 +143,7 @@ async function main(): Promise<void> {
         if (mainStreaming) {
           process.stdout.write("\n");
           mainStreaming = false;
+          mainStreamingPhase = undefined;
         }
         process.stdout.write(`ask> ${question}\n`);
         return (await rl.question("answer(YES/NO)> ")).trim();
@@ -146,6 +153,7 @@ async function main(): Promise<void> {
     if (mainStreaming) {
       process.stdout.write("\n");
       mainStreaming = false;
+      mainStreamingPhase = undefined;
     }
 
     process.stdout.write(`resolved mode: ${result.mode}\n`);

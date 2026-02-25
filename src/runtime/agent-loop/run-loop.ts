@@ -68,6 +68,7 @@ const COMPACTION_MARKER = "[SESSION_COMPACTION]";
 interface LoopRuntime {
   planning?: PlanningResult;
   forcedSynthesisEnableThink?: boolean;
+  forcedSynthesisReason?: string;
   evidence: EvidenceItem[];
   guidance: string;
   recentUserAnswer: string;
@@ -118,6 +119,25 @@ async function appendSessionEntries(config: AppConfig, session: ChatSession, ent
  */
 async function appendSystemEntry(config: AppConfig, session: ChatSession, content: string): Promise<void> {
   await appendSessionEntries(config, session, [{ role: "system", content }]);
+}
+
+/**
+ * 상태 진입 요약 이벤트를 공통 형식으로 발행한다.
+ * TUI/CLI는 이 이벤트를 로그 섹션에 표시해 현재 루프 위치를 빠르게 파악할 수 있다.
+ */
+function emitLoopState(
+  deps: LoopDependencies,
+  runtime: LoopRuntime,
+  state: Exclude<LoopState, LoopState.Done>,
+  summary: string,
+): void {
+  deps.options?.onEvent?.({
+    type: "loop-state",
+    state,
+    step: runtime.step,
+    evidenceCount: runtime.evidence.length,
+    summary,
+  });
 }
 
 /**
@@ -323,6 +343,12 @@ function summarizeDecisionEvidence(runtime: LoopRuntime): string[] {
  * 요약 문서를 보존하고 최근 메시지 일부만 남겨 모델 입력 여유를 복구한다.
  */
 async function handleContextCompaction(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
+  emitLoopState(
+    deps,
+    runtime,
+    LoopState.ContextGuard,
+    `context tokens are near limit (${deps.contextLimitTokens}); compacting session history`,
+  );
   const plan = computeCompactionPlan(deps.session, deps.contextLimitTokens);
   if (!plan.shouldCompact) {
     runtime.lastCompactionSignature = undefined;
@@ -365,16 +391,23 @@ async function handleContextCompaction(deps: LoopDependencies, runtime: LoopRunt
  * 사용자 요청의 성격을 먼저 분류해 증거 수집이 필요한지 여부를 결정한다.
  */
 async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
+  emitLoopState(
+    deps,
+    runtime,
+    LoopState.PlanIntent,
+    `planning user intent and selecting next transition from goal="${clipText(deps.goal, 120)}"`,
+  );
   deps.options?.onEvent?.({ type: "planning-start", goal: deps.goal });
 
   let planning: PlanningResult;
   try {
+    deps.options?.onEvent?.({ type: "main-start", phase: "planning", evidenceCount: runtime.evidence.length });
     planning = await askMainForPlanning({
       config: deps.config,
       allowStreaming: deps.routed.stream,
       goal: deps.goal,
       sessionContext: summarizeSessionForPlanning(deps.session.messages),
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "planning", token }),
       mainModel: deps.routed.main,
     });
   } catch (error) {
@@ -421,6 +454,7 @@ async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime):
 
   const evidenceSummary = summarizeDecisionEvidence(runtime);
   try {
+    deps.options?.onEvent?.({ type: "main-start", phase: "final-report", evidenceCount: runtime.evidence.length });
     runtime.finalAnswer = await askMainForFinalAnswer({
       config: deps.config,
       goal: deps.goal,
@@ -428,7 +462,7 @@ async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime):
       planning: runtime.planning,
       draft: planning.answer_hint?.trim(),
       allowStreaming: deps.routed.stream,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "final-report", token }),
       mainModel: deps.routed.main,
     });
   } catch (error) {
@@ -455,6 +489,7 @@ async function buildFinalAnswerFromDecision(params: {
   const decisionContext = summarizeDecisionContext(params.decision);
 
   try {
+    params.deps.options?.onEvent?.({ type: "main-start", phase: "final-report", evidenceCount: params.runtime.evidence.length });
     return await askMainForFinalAnswer({
       config: params.deps.config,
       goal: params.deps.goal,
@@ -463,7 +498,7 @@ async function buildFinalAnswerFromDecision(params: {
       planning: params.runtime.planning,
       draft,
       allowStreaming: params.deps.routed.stream,
-      onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", phase: "final-report", token }),
       mainModel: params.deps.routed.main,
     });
   } catch (error) {
@@ -484,7 +519,14 @@ async function buildFinalAnswerFromDecision(params: {
  * - finalize: main 판단 단계로 전이
  */
 async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
+  emitLoopState(
+    deps,
+    runtime,
+    LoopState.AcquireEvidence,
+    `worker evidence loop step=${runtime.step} (max=${deps.routed.maxSteps})`,
+  );
   if (runtime.step > deps.routed.maxSteps) {
+    runtime.forcedSynthesisReason = `max step reached: step=${runtime.step}, maxSteps=${deps.routed.maxSteps}`;
     return LoopState.ForcedSynthesis;
   }
 
@@ -517,6 +559,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
     const fallbackGuidance = `Worker validation failed at step ${runtime.step}. Proceed to main finalization using collected evidence. ${reason}`;
     deps.options?.onEvent?.({ type: "worker-action", step: runtime.step, action: "finalize", detail: fallbackGuidance });
     runtime.evidence.push({ kind: "main_guidance", summary: fallbackGuidance });
+    runtime.forcedSynthesisReason = `worker validation failed at step ${runtime.step}: ${reason}`;
     await appendSystemEntry(deps.config, deps.session, `[WORKER_VALIDATION_FAIL_${runtime.step}] ${reason}`);
     return LoopState.ForcedSynthesis;
   }
@@ -598,7 +641,13 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
  * - finalize: 최종 리포트 생성으로 종료
  */
 async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
-  deps.options?.onEvent?.({ type: "main-start", evidenceCount: runtime.evidence.length });
+  emitLoopState(
+    deps,
+    runtime,
+    LoopState.AssessSufficiency,
+    `assessing evidence sufficiency (evidence=${runtime.evidence.length}) to finalize or continue`,
+  );
+  deps.options?.onEvent?.({ type: "main-start", phase: "assess-sufficiency", evidenceCount: runtime.evidence.length });
   const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   let decision: MainDecision;
@@ -608,7 +657,7 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
       allowStreaming: deps.routed.stream,
       goal: deps.goal,
       evidenceSummary,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "assess-sufficiency", token }),
       forceFinalize: false,
       mainModel: deps.routed.main,
     });
@@ -618,13 +667,14 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
     runtime.guidance = `Main decision failed at step ${runtime.step}. Continue evidence loop with safer minimal actions. ${reason}`;
     runtime.evidence.push({ kind: "main_guidance", summary: runtime.guidance });
     await appendSystemEntry(deps.config, deps.session, `[MAIN_DECISION_FAIL_${runtime.step}] ${reason}`);
-    deps.options?.onEvent?.({ type: "main-decision", decision: "continue", guidance: runtime.guidance });
+    deps.options?.onEvent?.({ type: "main-decision", phase: "assess-sufficiency", decision: "continue", guidance: runtime.guidance });
     runtime.step += 1;
     return LoopState.AcquireEvidence;
   }
 
   deps.options?.onEvent?.({
     type: "main-decision",
+    phase: "assess-sufficiency",
     decision: decision.decision,
     guidance: decision.guidance,
   });
@@ -656,7 +706,13 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
  * 의도는 "실패하더라도 사용자에게 최종 결과를 반환"하는 데 있다.
  */
 async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
-  deps.options?.onEvent?.({ type: "main-start", evidenceCount: runtime.evidence.length });
+  emitLoopState(
+    deps,
+    runtime,
+    LoopState.ForcedSynthesis,
+    runtime.forcedSynthesisReason?.trim() || "forced synthesis path triggered; skip more evidence and produce final answer",
+  );
+  deps.options?.onEvent?.({ type: "main-start", phase: "forced-synthesis", evidenceCount: runtime.evidence.length });
   const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   try {
@@ -665,7 +721,7 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
       allowStreaming: deps.routed.stream,
       goal: deps.goal,
       evidenceSummary,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "forced-synthesis", token }),
       forceFinalize: true,
       enableThinkOverride: runtime.forcedSynthesisEnableThink,
       mainModel: deps.routed.main,
@@ -678,17 +734,22 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
       planning: runtime.planning,
       draft: decision.answer?.trim(),
       allowStreaming: deps.routed.stream,
-      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", phase: "forced-synthesis", token }),
       enableThinkOverride: runtime.forcedSynthesisEnableThink,
       mainModel: deps.routed.main,
     });
-    deps.options?.onEvent?.({ type: "main-decision", decision: "finalize" });
+    deps.options?.onEvent?.({ type: "main-decision", phase: "forced-synthesis", decision: "finalize" });
     deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
   } catch (error) {
     const reason = (error as Error).message;
     runtime.finalAnswer = fallbackFinalAnswer(deps.goal, evidenceSummary);
     await appendSystemEntry(deps.config, deps.session, `[MAIN_FORCE_FINALIZE_FAIL] ${reason}`);
-    deps.options?.onEvent?.({ type: "main-decision", decision: "finalize", guidance: `fallback finalize: ${reason}` });
+    deps.options?.onEvent?.({
+      type: "main-decision",
+      phase: "forced-synthesis",
+      decision: "finalize",
+      guidance: `fallback finalize: ${reason}`,
+    });
     deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
   }
 

@@ -12,6 +12,8 @@ interface StreamView {
   phase: "idle" | "thinking" | "final";
 }
 
+type MainPhase = Extract<AgentLoopEvent, { type: "main-token" }>["phase"];
+
 interface TuiState {
   sessionId: string;
   agentId: string;
@@ -23,7 +25,8 @@ interface TuiState {
   turn: number;
   lines: string[];
   workerView: StreamView;
-  mainView: StreamView;
+  mainViews: Record<MainPhase, StreamView>;
+  activeMainPhase: MainPhase;
   toolTraceByStep: Record<number, { reason?: string; cmd?: string }>;
 }
 
@@ -37,6 +40,15 @@ const ANSI_BOLD = "\x1b[1m";
 const ANSI_BG_USER = "\x1b[48;5;24m";
 const ANSI_WHITE = "\x1b[97m";
 const ANSI_RESET = "\x1b[0m";
+const MAIN_PHASE_ORDER: MainPhase[] = ["planning", "assess-sufficiency", "forced-synthesis", "final-report"];
+const MAIN_PHASE_LABEL: Record<MainPhase, string> = {
+  planning: "MAIN STREAM / PLAN INTENT",
+  "assess-sufficiency": "MAIN STREAM / ASSESS SUFFICIENCY",
+  "forced-synthesis": "MAIN STREAM / FORCED SYNTHESIS",
+  "final-report": "MAIN STREAM / FINAL REPORT",
+};
+const THINK_FOLD_LINES_DEFAULT = 44;
+const THINK_FOLD_LINES_FORCED = 20;
 
 function now(): string {
   return new Date().toISOString().slice(11, 19);
@@ -44,6 +56,15 @@ function now(): string {
 
 function createView(): StreamView {
   return { raw: "", think: "", final: "", phase: "idle" };
+}
+
+function createMainViews(): Record<MainPhase, StreamView> {
+  return {
+    planning: createView(),
+    "assess-sufficiency": createView(),
+    "forced-synthesis": createView(),
+    "final-report": createView(),
+  };
 }
 
 function viewFromFinalAnswer(answer: string): StreamView {
@@ -151,7 +172,25 @@ function separator(char: string, width: number): string {
   return char.repeat(Math.max(40, width));
 }
 
-function renderStreamSection(title: string, view: StreamView, width: number, grayThink = false): string[] {
+function foldMiddleLines(lines: string[], maxLines: number): string[] {
+  if (lines.length <= maxLines || maxLines < 7) {
+    return lines;
+  }
+  const head = Math.max(3, Math.floor(maxLines * 0.25));
+  const tail = Math.max(3, maxLines - head - 1);
+  const hidden = lines.length - head - tail;
+  return [...lines.slice(0, head), `... (${hidden} lines folded) ...`, ...lines.slice(-tail)];
+}
+
+function renderStreamSection(
+  title: string,
+  view: StreamView,
+  width: number,
+  options?: {
+    grayThink?: boolean;
+    thinkLineLimit?: number;
+  },
+): string[] {
   const out: string[] = [paint(`[${title}]`, ANSI_BOLD, ANSI_CYAN)];
   const bodyWidth = Math.max(40, width - 4);
 
@@ -163,7 +202,11 @@ function renderStreamSection(title: string, view: StreamView, width: number, gra
   if (view.think.trim().length > 0 || view.raw.includes("<think>")) {
     out.push("THINK PHASE:");
     const thinkLines = wrapParagraphs(view.think || "(thinking...)", bodyWidth);
-    out.push(...(grayThink ? thinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`) : thinkLines));
+    const foldedThinkLines =
+      typeof options?.thinkLineLimit === "number"
+        ? foldMiddleLines(thinkLines, options.thinkLineLimit)
+        : thinkLines;
+    out.push(...(options?.grayThink ? foldedThinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`) : foldedThinkLines));
     out.push("");
     out.push("FINAL RESPONSE:");
     out.push(...wrapParagraphs(view.final || "(waiting final response)", bodyWidth));
@@ -175,10 +218,42 @@ function renderStreamSection(title: string, view: StreamView, width: number, gra
   return out;
 }
 
+function hasRenderableStream(view: StreamView): boolean {
+  return view.raw.trim().length > 0 || view.final.trim().length > 0 || view.think.trim().length > 0;
+}
+
+function renderMainSections(state: TuiState, width: number): string[] {
+  const out: string[] = [];
+  const visiblePhases = MAIN_PHASE_ORDER.filter(
+    (phase) => phase === state.activeMainPhase || hasRenderableStream(state.mainViews[phase]),
+  );
+
+  if (visiblePhases.length === 0) {
+    return renderStreamSection("MAIN STREAM", createView(), width, {
+      grayThink: true,
+      thinkLineLimit: THINK_FOLD_LINES_DEFAULT,
+    });
+  }
+
+  for (const [index, phase] of visiblePhases.entries()) {
+    if (index > 0) {
+      out.push(paint(separator("─", Math.max(40, width - 4)), ANSI_GRAY));
+    }
+    out.push(
+      ...renderStreamSection(MAIN_PHASE_LABEL[phase], state.mainViews[phase], width, {
+        grayThink: true,
+        thinkLineLimit: phase === "forced-synthesis" ? THINK_FOLD_LINES_FORCED : THINK_FOLD_LINES_DEFAULT,
+      }),
+    );
+  }
+
+  return out;
+}
+
 function render(state: TuiState): void {
   const width = output.columns || 100;
-  const topSep = separator("=", width);
-  const midSep = separator("-", width);
+  const topSep = separator("─", width);
+  const midSep = separator("─", width);
 
   output.write("\x1b[2J\x1b[H");
   output.write(paint("Senaka Agent TUI", ANSI_BOLD, ANSI_CYAN) + "\n");
@@ -200,7 +275,7 @@ function render(state: TuiState): void {
   }
 
   output.write(paint(midSep, ANSI_BLUE) + "\n");
-  for (const line of renderStreamSection("MAIN STREAM", state.mainView, width, true)) {
+  for (const line of renderMainSections(state, width)) {
     output.write(line + "\n");
   }
 
@@ -219,6 +294,14 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
     pushLine(
       state,
       paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
+    );
+  } else if (event.type === "loop-state") {
+    pushLine(
+      state,
+      paint(
+        `state ${event.state}: step=${event.step} evidence=${event.evidenceCount} :: ${trimOneLine(event.summary, 220)}`,
+        ANSI_BLUE,
+      ),
     );
   } else if (event.type === "planning-start") {
     pushLine(state, paint(`planning start: ${trimOneLine(event.goal, 220)}`, ANSI_BLUE));
@@ -282,20 +365,22 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
   } else if (event.type === "ask-answer") {
     pushLine(state, paint(`ask answer(${event.step}): ${event.answer}`, ANSI_GREEN));
   } else if (event.type === "main-start") {
-    pushLine(state, paint(`main synthesis started with evidence=${event.evidenceCount}`, ANSI_BLUE));
+    state.activeMainPhase = event.phase;
+    pushLine(state, paint(`main[${event.phase}] started with evidence=${event.evidenceCount}`, ANSI_BLUE));
   } else if (event.type === "main-token") {
-    state.mainView = appendToken(state.mainView, event.token);
+    state.activeMainPhase = event.phase;
+    state.mainViews[event.phase] = appendToken(state.mainViews[event.phase], event.token);
   } else if (event.type === "main-decision") {
     pushLine(
       state,
       paint(
-        `main decision: ${event.decision}${event.guidance ? ` :: ${trimOneLine(event.guidance, 220)}` : ""}`,
+        `main decision[${event.phase}]: ${event.decision}${event.guidance ? ` :: ${trimOneLine(event.guidance, 220)}` : ""}`,
         event.decision === "finalize" ? ANSI_GREEN : ANSI_YELLOW,
       ),
     );
   } else if (event.type === "final-answer") {
-    state.mainView = viewFromFinalAnswer(event.answer);
-    pushLine(state, paint(`main final report ready (${event.answer.length} chars)`, ANSI_GREEN));
+    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(event.answer);
+    pushLine(state, paint(`main final report ready[${state.activeMainPhase}] (${event.answer.length} chars)`, ANSI_GREEN));
   } else if (event.type === "complete") {
     pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
     pushLine(state, paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN));
@@ -317,7 +402,8 @@ async function main(): Promise<void> {
     turn: 0,
     lines: [],
     workerView: createView(),
-    mainView: createView(),
+    mainViews: createMainViews(),
+    activeMainPhase: "planning",
     toolTraceByStep: {},
   };
 
@@ -341,7 +427,8 @@ async function main(): Promise<void> {
     if (line === "/clear") {
       state.lines = [];
       state.workerView = createView();
-      state.mainView = createView();
+      state.mainViews = createMainViews();
+      state.activeMainPhase = "planning";
       continue;
     }
 
@@ -420,7 +507,8 @@ async function main(): Promise<void> {
 
     state.busy = true;
     state.workerView = createView();
-    state.mainView = createView();
+    state.mainViews = createMainViews();
+    state.activeMainPhase = "planning";
     const fullWidth = Math.max(40, output.columns || 100);
     const contentWidth = Math.max(20, fullWidth - 2);
     pushSpacer(state);

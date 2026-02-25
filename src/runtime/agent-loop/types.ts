@@ -57,6 +57,16 @@ export interface MainDecision {
   forced_synthesis_enable_think?: boolean;
 }
 
+export type LoopPhase =
+  | "plan-intent"
+  | "context-guard"
+  | "acquire-evidence"
+  | "assess-sufficiency"
+  | "forced-synthesis"
+  | "done";
+
+export type MainStreamPhase = "planning" | "assess-sufficiency" | "forced-synthesis" | "final-report";
+
 export interface PlanningResult {
   next: "collect_evidence" | "main_decision" | "final_report";
   reason: string;
@@ -71,6 +81,7 @@ export interface PlanningResult {
  */
 export type AgentLoopEvent =
   | { type: "start"; agentId: string; mode: AgentMode; goal: string }
+  | { type: "loop-state"; state: Exclude<LoopPhase, "done">; step: number; evidenceCount: number; summary: string }
   | { type: "planning-start"; goal: string }
   | { type: "planning-result"; next: PlanningResult["next"]; reason: string; evidenceGoals: string[]; guidance?: string }
   | {
@@ -103,9 +114,9 @@ export type AgentLoopEvent =
     }
   | { type: "ask"; step: number; question: string }
   | { type: "ask-answer"; step: number; answer: string }
-  | { type: "main-start"; evidenceCount: number }
-  | { type: "main-token"; token: string }
-  | { type: "main-decision"; decision: "finalize" | "continue"; guidance?: string }
+  | { type: "main-start"; phase: MainStreamPhase; evidenceCount: number }
+  | { type: "main-token"; phase: MainStreamPhase; token: string }
+  | { type: "main-decision"; phase: "assess-sufficiency" | "forced-synthesis"; decision: "finalize" | "continue"; guidance?: string }
   | { type: "final-answer"; answer: string }
   | { type: "complete"; steps: number; evidenceCount: number };
 
