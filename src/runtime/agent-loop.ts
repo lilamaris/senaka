@@ -256,6 +256,25 @@ function fallbackFinalAnswer(goal: string, evidenceSummary: string[]): string {
   ].join("\n");
 }
 
+function summarizeDecisionContext(decision: MainDecision): string {
+  const parts: string[] = [];
+  if (decision.answer?.trim()) {
+    parts.push(`decision_answer: ${decision.answer.trim()}`);
+  }
+  if (decision.guidance?.trim()) {
+    parts.push(`decision_guidance: ${decision.guidance.trim()}`);
+  }
+  if (decision.summary_evidence && decision.summary_evidence.length > 0) {
+    parts.push(
+      `decision_summary_evidence: ${decision.summary_evidence.map((v, i) => `${i + 1}. ${v}`).join(" | ")}`,
+    );
+  }
+  if (decision.needed_evidence && decision.needed_evidence.length > 0) {
+    parts.push(`decision_needed_evidence: ${decision.needed_evidence.map((v, i) => `${i + 1}. ${v}`).join(" | ")}`);
+  }
+  return parts.join("\n");
+}
+
 function estimateTokenCount(text: string): number {
   const compact = text.trim();
   if (!compact) {
@@ -520,7 +539,12 @@ async function askWorkerForAction(params: {
   throw new Error(`worker action retries exhausted at step ${params.step}`);
 }
 
-function buildMainFinalAnswerMessages(goal: string, evidenceSummary: string[], draft?: string): ChatMessage[] {
+function buildMainFinalAnswerMessages(
+  goal: string,
+  evidenceSummary: string[],
+  decisionContext?: string,
+  draft?: string,
+): ChatMessage[] {
   return [
     {
       role: "system",
@@ -528,7 +552,7 @@ function buildMainFinalAnswerMessages(goal: string, evidenceSummary: string[], d
         "You are the final reporter for the Evidence Loop.",
         "Return plain text only.",
         "Do NOT output JSON, code blocks, XML, or key-value schemas.",
-        "Write a concise final answer grounded in the evidence.",
+        "Write a concise final answer grounded in the evidence and decision context.",
       ].join("\n"),
     },
     {
@@ -537,6 +561,7 @@ function buildMainFinalAnswerMessages(goal: string, evidenceSummary: string[], d
         `Goal: ${goal}`,
         "Evidence summary:",
         ...(evidenceSummary.length > 0 ? evidenceSummary.map((e, i) => `${i + 1}. ${e}`) : ["none"]),
+        decisionContext ? `Decision context:\n${decisionContext}` : "",
         draft ? `Draft answer (may be malformed): ${draft}` : "",
       ]
         .filter(Boolean)
@@ -549,11 +574,17 @@ async function askMainForFinalAnswer(params: {
   config: AppConfig;
   goal: string;
   evidenceSummary: string[];
+  decisionContext?: string;
   draft?: string;
   mainModel: ResolvedModelCandidate;
 }): Promise<string> {
   const mainApi = resolveChatCompletionApi(params.mainModel);
-  const baseMessages = buildMainFinalAnswerMessages(params.goal, params.evidenceSummary, params.draft);
+  const baseMessages = buildMainFinalAnswerMessages(
+    params.goal,
+    params.evidenceSummary,
+    params.decisionContext,
+    params.draft,
+  );
   let messages = baseMessages;
 
   for (let attempt = 0; attempt <= MAX_FINAL_ANSWER_RETRIES; attempt += 1) {
@@ -748,23 +779,21 @@ export async function runAgentLoop(
 
     if (decision.decision === "finalize") {
       const draft = decision.answer?.trim();
-      if (draft && !looksLikeStructuredOutput(draft)) {
-        finalAnswer = draft;
-      } else {
-        try {
-          finalAnswer = await askMainForFinalAnswer({
-            config,
-            goal,
-            evidenceSummary,
-            draft,
-            mainModel: routed.main,
-          });
-        } catch (error) {
-          finalAnswer = fallbackFinalAnswer(goal, evidenceSummary);
-          const reason = (error as Error).message;
-          session.messages.push({ role: "system", content: `[MAIN_FINAL_ANSWER_FAIL_${step}] ${reason}` });
-          await saveSession(config.sessionDir, session);
-        }
+      const decisionContext = summarizeDecisionContext(decision);
+      try {
+        finalAnswer = await askMainForFinalAnswer({
+          config,
+          goal,
+          evidenceSummary,
+          decisionContext,
+          draft,
+          mainModel: routed.main,
+        });
+      } catch (error) {
+        finalAnswer = fallbackFinalAnswer(goal, evidenceSummary);
+        const reason = (error as Error).message;
+        session.messages.push({ role: "system", content: `[MAIN_FINAL_ANSWER_FAIL_${step}] ${reason}` });
+        await saveSession(config.sessionDir, session);
       }
       break;
     }
@@ -795,17 +824,15 @@ export async function runAgentLoop(
       });
 
       const fallbackDraft = decision.answer?.trim();
-      if (fallbackDraft && !looksLikeStructuredOutput(fallbackDraft)) {
-        finalAnswer = fallbackDraft;
-      } else {
-        finalAnswer = await askMainForFinalAnswer({
-          config,
-          goal,
-          evidenceSummary: finalEvidence,
-          draft: fallbackDraft,
-          mainModel: routed.main,
-        });
-      }
+      const decisionContext = summarizeDecisionContext(decision);
+      finalAnswer = await askMainForFinalAnswer({
+        config,
+        goal,
+        evidenceSummary: finalEvidence,
+        decisionContext,
+        draft: fallbackDraft,
+        mainModel: routed.main,
+      });
       options?.onEvent?.({ type: "main-decision", decision: "finalize" });
     } catch (error) {
       const reason = (error as Error).message;
