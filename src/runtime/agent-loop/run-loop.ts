@@ -9,7 +9,6 @@ import {
   estimateTokenCount,
   summarizeDecisionContext,
   summarizeEvidenceForMain,
-  summarizePlanningContext,
   summarizeToolResult,
   buildWorkerMessages,
 } from "./helpers.js";
@@ -425,7 +424,6 @@ async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime):
       config: deps.config,
       goal: deps.goal,
       evidenceSummary,
-      decisionContext: summarizePlanningContext(runtime.planning),
       planning: runtime.planning,
       draft: planning.answer_hint?.trim(),
       allowStreaming: deps.routed.stream,
