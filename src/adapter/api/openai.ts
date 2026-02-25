@@ -44,6 +44,9 @@ function toRequestBody(candidate: ResolvedModelCandidate, request: CompletionReq
     ...(stream ? { stream: true } : {}),
     temperature: request.temperature ?? candidate.temperature ?? 0.2,
     ...(request.maxTokens ?? candidate.maxTokens ? { max_tokens: request.maxTokens ?? candidate.maxTokens } : {}),
+    ...(request.topP !== undefined ? { top_p: request.topP } : {}),
+    ...(request.minP !== undefined ? { min_p: request.minP } : {}),
+    ...(request.topK !== undefined ? { top_k: request.topK } : {}),
     ...(candidate.extraBody ?? {}),
     ...(request.extraBody ?? {}),
   };

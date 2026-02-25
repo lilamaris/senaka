@@ -1,4 +1,4 @@
-export type ChatRole = "system" | "user" | "assistant";
+import type { ChatRole } from "../core/agent/type.js";
 
 export interface ChatMessage {
   role: ChatRole;

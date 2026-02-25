@@ -1,11 +1,9 @@
 import type { ChatCompletionResponse, ChatMessage } from "../../types/chat.js";
 import type { ProviderType, ResolvedModelCandidate } from "../../types/model.js";
+import type { ModelLoadOption } from "../model/type.js";
 
-export interface CompletionRequest {
+export interface CompletionRequest extends ModelLoadOption {
   messages: ChatMessage[];
-  temperature?: number;
-  maxTokens?: number;
-  extraBody?: Record<string, unknown>;
 }
 
 export interface StreamHandler {
