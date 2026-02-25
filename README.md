@@ -76,6 +76,8 @@
 - `DOCKER_MEMORY` (기본값: `512m`)
 - `DOCKER_CPUS` (기본값: `1.0`)
 - `DOCKER_PIDS_LIMIT` (기본값: `256`)
+- `WORKER_DISABLE_THINKING_HACK` (기본값: `true`)
+- `WORKER_THINK_BYPASS_TAG` (기본값: `<think></think>`)
 
 실행 예시:
 ```bash
