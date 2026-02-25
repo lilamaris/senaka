@@ -164,6 +164,7 @@ TUI 명령:
 - `agent:tui`에서는 생성 중 토큰이 `WORKER STREAM`, `MAIN STREAM` 섹션에 무절단으로 실시간 표시됩니다.
 - `<think>...</think>`가 포함된 경우 `THINK PHASE`와 `FINAL RESPONSE` 단락으로 분리해서 표시합니다.
 - 각 실행 턴은 `TURN N START/END` 구분선으로 명확히 분리됩니다.
+- TUI 렌더러는 전체 스크린 clear가 아닌 라인 diff 갱신 + 토큰 렌더 스로틀(약 30fps)로 플리커링을 줄입니다.
 
 Planning/Compaction 관측:
 - `agent:run`, `agent:tui`에서 planning 이벤트(`planning-start`, `planning-result`)를 출력합니다.

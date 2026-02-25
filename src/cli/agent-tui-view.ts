@@ -19,7 +19,10 @@ export interface StreamView {
   phase: "idle" | "thinking" | "final";
 }
 
-export type MainPhase = Extract<AgentLoopEvent, { type: "main-token" }>["phase"];
+export type MainPhase = Extract<
+  AgentLoopEvent,
+  { type: "main-token" }
+>["phase"];
 
 export interface TuiState {
   sessionId: string;
@@ -48,7 +51,12 @@ export const ANSI_BG_USER = "\x1b[48;5;24m";
 export const ANSI_WHITE = "\x1b[97m";
 export const ANSI_RESET = "\x1b[0m";
 
-const MAIN_PHASE_ORDER: MainPhase[] = ["planning", "assess-sufficiency", "forced-synthesis", "final-report"];
+const MAIN_PHASE_ORDER: MainPhase[] = [
+  "planning",
+  "assess-sufficiency",
+  "forced-synthesis",
+  "final-report",
+];
 const MAIN_PHASE_LABEL: Record<MainPhase, string> = {
   planning: "MAIN STREAM / PLAN INTENT",
   "assess-sufficiency": "MAIN STREAM / ASSESS SUFFICIENCY",
@@ -57,6 +65,13 @@ const MAIN_PHASE_LABEL: Record<MainPhase, string> = {
 };
 const THINK_FOLD_LINES_DEFAULT = 44;
 const THINK_FOLD_LINES_FORCED = 20;
+const rendererState: {
+  initialized: boolean;
+  lastFrame: string[];
+} = {
+  initialized: false,
+  lastFrame: [],
+};
 
 function now(): string {
   return new Date().toISOString().slice(11, 19);
@@ -93,7 +108,10 @@ export function createInitialState(): TuiState {
   };
 }
 
-export function viewFromFinalAnswer(answer: string, previous?: StreamView): StreamView {
+export function viewFromFinalAnswer(
+  answer: string,
+  previous?: StreamView,
+): StreamView {
   const clean = answer.trim();
   if (!clean) {
     return previous ?? createView();
@@ -103,7 +121,10 @@ export function viewFromFinalAnswer(answer: string, previous?: StreamView): Stre
     return parsed;
   }
 
-  const previousHasThink = Boolean(previous && (previous.think.trim().length > 0 || previous.raw.includes("<think>")));
+  const previousHasThink = Boolean(
+    previous &&
+      (previous.think.trim().length > 0 || previous.raw.includes("<think>")),
+  );
   if (previousHasThink) {
     const think = previous?.think ?? "";
     return {
@@ -128,7 +149,12 @@ function parseThinkBlocks(raw: string): StreamView {
 
   const end = raw.indexOf(endTag, start + startTag.length);
   if (end < 0) {
-    return { raw, think: raw.slice(start + startTag.length), final: "", phase: "thinking" };
+    return {
+      raw,
+      think: raw.slice(start + startTag.length),
+      final: "",
+      phase: "thinking",
+    };
   }
 
   return {
@@ -173,7 +199,11 @@ export function paint(text: string, ...styles: string[]): string {
   return `${styles.join("")}${text}${ANSI_RESET}`;
 }
 
-export function paintFullWidthLine(text: string, width: number, ...styles: string[]): string {
+export function paintFullWidthLine(
+  text: string,
+  width: number,
+  ...styles: string[]
+): string {
   const target = Math.max(1, width);
   const sliced = text.length > target ? text.slice(0, target) : text;
   return paint(sliced.padEnd(target, " "), ...styles);
@@ -203,7 +233,7 @@ export function pushRawLine(state: TuiState, text: string): void {
 }
 
 export function pushLine(state: TuiState, text: string): void {
-  pushRawLine(state, `[${now()}] ${text}`);
+  pushRawLine(state, `${text}`);
 }
 
 export function pushSpacer(state: TuiState): void {
@@ -221,7 +251,11 @@ function foldMiddleLines(lines: string[], maxLines: number): string[] {
   const head = Math.max(3, Math.floor(maxLines * 0.25));
   const tail = Math.max(3, maxLines - head - 1);
   const hidden = lines.length - head - tail;
-  return [...lines.slice(0, head), `... (${hidden} lines folded) ...`, ...lines.slice(-tail)];
+  return [
+    ...lines.slice(0, head),
+    `... (${hidden} lines folded) ...`,
+    ...lines.slice(-tail),
+  ];
 }
 
 function renderStreamSection(
@@ -248,10 +282,16 @@ function renderStreamSection(
       typeof options?.thinkLineLimit === "number"
         ? foldMiddleLines(thinkLines, options.thinkLineLimit)
         : thinkLines;
-    out.push(...(options?.grayThink ? foldedThinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`) : foldedThinkLines));
+    out.push(
+      ...(options?.grayThink
+        ? foldedThinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`)
+        : foldedThinkLines),
+    );
     out.push("");
     out.push("FINAL RESPONSE:");
-    out.push(...wrapParagraphs(view.final || "(waiting final response)", bodyWidth));
+    out.push(
+      ...wrapParagraphs(view.final || "(waiting final response)", bodyWidth),
+    );
     return out;
   }
 
@@ -261,13 +301,19 @@ function renderStreamSection(
 }
 
 function hasRenderableStream(view: StreamView): boolean {
-  return view.raw.trim().length > 0 || view.final.trim().length > 0 || view.think.trim().length > 0;
+  return (
+    view.raw.trim().length > 0 ||
+    view.final.trim().length > 0 ||
+    view.think.trim().length > 0
+  );
 }
 
 function renderMainSections(state: TuiState, width: number): string[] {
   const out: string[] = [];
   const visiblePhases = MAIN_PHASE_ORDER.filter(
-    (phase) => phase === state.activeMainPhase || hasRenderableStream(state.mainViews[phase]),
+    (phase) =>
+      phase === state.activeMainPhase ||
+      hasRenderableStream(state.mainViews[phase]),
   );
 
   if (visiblePhases.length === 0) {
@@ -282,10 +328,18 @@ function renderMainSections(state: TuiState, width: number): string[] {
       out.push(paint(separator("─", Math.max(40, width - 4)), ANSI_GRAY));
     }
     out.push(
-      ...renderStreamSection(MAIN_PHASE_LABEL[phase], state.mainViews[phase], width, {
-        grayThink: true,
-        thinkLineLimit: phase === "forced-synthesis" ? THINK_FOLD_LINES_FORCED : THINK_FOLD_LINES_DEFAULT,
-      }),
+      ...renderStreamSection(
+        MAIN_PHASE_LABEL[phase],
+        state.mainViews[phase],
+        width,
+        {
+          grayThink: true,
+          thinkLineLimit:
+            phase === "forced-synthesis"
+              ? THINK_FOLD_LINES_FORCED
+              : THINK_FOLD_LINES_DEFAULT,
+        },
+      ),
     );
   }
 
@@ -293,37 +347,76 @@ function renderMainSections(state: TuiState, width: number): string[] {
 }
 
 export function render(state: TuiState): void {
+  const lines = buildFrameLines(state);
+  const prev = rendererState.lastFrame;
+  const maxLines = Math.max(prev.length, lines.length);
+
+  if (!rendererState.initialized) {
+    output.write("\x1b[?25l\x1b[2J");
+    rendererState.initialized = true;
+  }
+
+  for (let idx = 0; idx < maxLines; idx += 1) {
+    const next = lines[idx] ?? "";
+    const prevLine = prev[idx] ?? "";
+    if (next === prevLine) {
+      continue;
+    }
+    output.write(`\x1b[${idx + 1};1H\x1b[2K${next}`);
+  }
+
+  rendererState.lastFrame = lines;
+  output.write(`\x1b[${lines.length + 1};1H`);
+}
+
+export function teardownRender(): void {
+  if (!rendererState.initialized) {
+    return;
+  }
+  const row = rendererState.lastFrame.length + 2;
+  output.write(`\x1b[${row};1H\x1b[?25h`);
+  rendererState.initialized = false;
+  rendererState.lastFrame = [];
+}
+
+function buildFrameLines(state: TuiState): string[] {
   const width = output.columns || 100;
   const topSep = separator("─", width);
   const midSep = separator("─", width);
+  const out: string[] = [];
 
-  output.write("\x1b[2J\x1b[H");
-  output.write(paint("Senaka Agent TUI", ANSI_BOLD, ANSI_CYAN) + "\n");
-  output.write(
+  out.push(paint("Senaka Agent TUI", ANSI_BOLD, ANSI_CYAN));
+  out.push(
     paint(
       `session=${state.sessionId} group=${state.groupId ?? state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}`,
       ANSI_BLUE,
-    ) + "\n",
+    ),
   );
-  output.write(paint(topSep, ANSI_BLUE) + "\n");
+  out.push(paint(topSep, ANSI_BLUE));
 
   for (const line of state.lines.slice(-80)) {
-    output.write(line + "\n");
+    out.push(line);
   }
 
-  output.write(paint(midSep, ANSI_BLUE) + "\n");
-  for (const line of renderStreamSection("WORKER STREAM", state.workerView, width)) {
-    output.write(line + "\n");
+  out.push(paint(midSep, ANSI_BLUE));
+  for (const line of renderStreamSection(
+    "WORKER STREAM",
+    state.workerView,
+    width,
+  )) {
+    out.push(line);
   }
 
-  output.write(paint(midSep, ANSI_BLUE) + "\n");
+  out.push(paint(midSep, ANSI_BLUE));
   for (const line of renderMainSections(state, width)) {
-    output.write(line + "\n");
+    out.push(line);
   }
 
-  output.write(paint(topSep, ANSI_BLUE) + "\n");
-  output.write(
-    "Commands: /agent ID, /group ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit\n",
+  out.push(paint(topSep, ANSI_BLUE));
+  out.push(
+    "Commands: /agent ID, /group ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit",
   );
-  output.write("Type any goal and press Enter to run a turn.\n\n");
+  out.push("Type any goal and press Enter to run a turn.");
+  out.push("");
+  return out;
 }

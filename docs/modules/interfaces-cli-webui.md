@@ -43,6 +43,8 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 - worker/main 토큰 생성 스트리밍 무절단 실시간 확인(`WORKER STREAM`, `MAIN STREAM`)
 - think 모델 출력은 `THINK PHASE` / `FINAL RESPONSE` 단락 분리
 - 턴 간 구분선(`TURN N START/END`)으로 실행 경계 표시
+- 렌더 방식은 전체 화면 clear 재출력이 아니라 프레임 라인 diff 갱신
+- 토큰 이벤트는 스로틀 렌더링(약 30fps)으로 플리커링 완화
 
 ## 현재 CLI 단일 실행 기능
 - `agent:run`은 worker `ask` 액션 발생 시 `answer(YES/NO)>`로 사용자 응답 수집

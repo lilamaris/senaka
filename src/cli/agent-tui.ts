@@ -16,6 +16,7 @@ import {
   pushRawLine,
   pushSpacer,
   render,
+  teardownRender,
   trimOneLine,
   wrapParagraphs,
 } from "./agent-tui-view.js";
@@ -35,12 +36,40 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const state = createInitialState();
   const rl = readline.createInterface({ input, output });
+  const TOKEN_RENDER_THROTTLE_MS = 33;
+  let lastRenderMs = 0;
+  let pendingRenderTimer: NodeJS.Timeout | undefined;
+
+  const flushRender = (): void => {
+    if (pendingRenderTimer) {
+      clearTimeout(pendingRenderTimer);
+      pendingRenderTimer = undefined;
+    }
+    render(state);
+    lastRenderMs = Date.now();
+  };
+
+  const scheduleThrottledRender = (): void => {
+    const elapsed = Date.now() - lastRenderMs;
+    if (elapsed >= TOKEN_RENDER_THROTTLE_MS) {
+      flushRender();
+      return;
+    }
+    if (pendingRenderTimer) {
+      return;
+    }
+    pendingRenderTimer = setTimeout(() => {
+      pendingRenderTimer = undefined;
+      render(state);
+      lastRenderMs = Date.now();
+    }, TOKEN_RENDER_THROTTLE_MS - elapsed);
+  };
 
   pushLine(state, "TUI ready");
   pushLine(state, `model config: ${config.modelProfilesPath}`);
 
   while (true) {
-    render(state);
+    flushRender();
     const line = (await rl.question("goal> ")).trim();
 
     if (!line) {
@@ -146,7 +175,7 @@ async function main(): Promise<void> {
     }
     pushRawLine(state, paintFullWidthLine("", fullWidth, ANSI_BG_USER));
     pushSpacer(state);
-    render(state);
+    flushRender();
 
     try {
       const session = await loadOrCreateSession(config.sessionDir, state.sessionId, config.systemPrompt);
@@ -155,10 +184,17 @@ async function main(): Promise<void> {
         maxSteps: state.maxStepsOverride,
         stream: state.streamOverride,
         workspaceGroupId: state.groupId,
-        onEvent: (event) => onTuiEvent(state, event),
+        onEvent: (event) => {
+          const hint = onTuiEvent(state, event);
+          if (hint === "throttled") {
+            scheduleThrottledRender();
+            return;
+          }
+          flushRender();
+        },
         askUser: async (question) => {
           pushLine(state, `ASK REQUIRED: ${question}`);
-          render(state);
+          flushRender();
           const answer = (await rl.question("ask(YES/NO)> ")).trim();
           return answer;
         },
@@ -168,17 +204,22 @@ async function main(): Promise<void> {
       pushLine(state, `worker model: ${result.workerModel}`);
       pushLine(state, `main model: ${result.mainModel}`);
       pushLine(state, `final: ${trimOneLine(result.summary, 280)}`);
+      flushRender();
     } catch (error) {
       pushLine(state, `error: ${(error as Error).message}`);
+      flushRender();
     } finally {
       state.busy = false;
+      flushRender();
     }
   }
 
   rl.close();
+  teardownRender();
 }
 
 main().catch((error) => {
+  teardownRender();
   process.stderr.write(`fatal> ${(error as Error).message}\n`);
   process.exit(1);
 });

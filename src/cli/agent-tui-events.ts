@@ -3,6 +3,7 @@ import {
   ANSI_BLUE,
   ANSI_BOLD,
   ANSI_CYAN,
+  ANSI_GRAY,
   ANSI_GREEN,
   ANSI_RED,
   ANSI_WHITE,
@@ -11,7 +12,6 @@ import {
   firstNonEmptyLine,
   paint,
   pushLine,
-  render,
   trimOneLine,
   viewFromFinalAnswer,
   type TuiState,
@@ -27,14 +27,26 @@ import {
  * 역의존성:
  * - src/cli/agent-tui.ts
  */
-export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
+export type TuiRenderHint = "immediate" | "throttled";
+
+export function onTuiEvent(
+  state: TuiState,
+  event: AgentLoopEvent,
+): TuiRenderHint {
+  let hint: TuiRenderHint = "immediate";
   if (event.type === "start") {
     state.turn += 1;
     state.toolTraceByStep = {};
-    pushLine(state, paint(`=== TURN ${state.turn} START ===`, ANSI_BOLD, ANSI_CYAN));
     pushLine(
       state,
-      paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
+      paint(`=== TURN ${state.turn} START ===`, ANSI_BOLD, ANSI_CYAN),
+    );
+    pushLine(
+      state,
+      paint(
+        `run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`,
+        ANSI_CYAN,
+      ),
     );
   } else if (event.type === "loop-state") {
     pushLine(
@@ -45,7 +57,10 @@ export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
       ),
     );
   } else if (event.type === "planning-start") {
-    pushLine(state, paint(`planning start: ${trimOneLine(event.goal, 220)}`, ANSI_BLUE));
+    pushLine(
+      state,
+      paint(`planning start: ${trimOneLine(event.goal, 220)}`, ANSI_BLUE),
+    );
   } else if (event.type === "planning-result") {
     pushLine(
       state,
@@ -55,7 +70,13 @@ export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
       ),
     );
     if (event.evidenceGoals.length > 0) {
-      pushLine(state, paint(`planning goals: ${event.evidenceGoals.map((goal) => trimOneLine(goal, 100)).join(" | ")}`, ANSI_CYAN));
+      pushLine(
+        state,
+        paint(
+          `planning goals: ${event.evidenceGoals.map((goal) => trimOneLine(goal, 100)).join(" | ")}`,
+          ANSI_CYAN,
+        ),
+      );
     }
   } else if (event.type === "compaction-start") {
     pushLine(
@@ -77,19 +98,50 @@ export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
     pushLine(state, paint(`worker step ${event.step} started`, ANSI_BLUE));
   } else if (event.type === "worker-token") {
     state.workerView = appendToken(state.workerView, event.token);
+    hint = "throttled";
   } else if (event.type === "worker-action") {
     if (event.action === "call_tool") {
-      state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), reason: event.detail };
+      state.toolTraceByStep[event.step] = {
+        ...(state.toolTraceByStep[event.step] ?? {}),
+        reason: event.detail,
+      };
     } else {
-      pushLine(state, `worker action(${event.step}): ${event.action} :: ${event.detail}`);
+      pushLine(
+        state,
+        `worker action(${event.step}): ${event.action} :: ${event.detail}`,
+      );
     }
   } else if (event.type === "tool-start") {
-    state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), cmd: event.cmd };
+    state.toolTraceByStep[event.step] = {
+      ...(state.toolTraceByStep[event.step] ?? {}),
+      cmd: event.cmd,
+    };
   } else if (event.type === "tool-result") {
     const trace = state.toolTraceByStep[event.step] ?? {};
-    pushLine(state, paint(`Evidence Loop step ${event.step}`, ANSI_BOLD, ANSI_YELLOW));
-    pushLine(state, paint(`  reason: ${trimOneLine(trace.reason ?? "<missing reason>")}`, ANSI_YELLOW));
-    pushLine(state, paint(`  cmd   : ${trimOneLine(trace.cmd ?? "<missing cmd>", 260)}`, ANSI_WHITE));
+    pushLine(
+      state,
+      paint(`• ${trimOneLine(trace.reason ?? "<missing reason>")}`, ANSI_WHITE),
+    );
+    pushLine(
+      state,
+      paint(`└ ${trimOneLine(trace.cmd ?? "<missing cmd>", 260)}`, ANSI_WHITE),
+    );
+    pushLine(
+      state,
+      paint(
+        `  stdout: ${trimOneLine(firstNonEmptyLine(event.stdout), 240)}`,
+        ANSI_GRAY,
+      ),
+    );
+    if (event.stderr.trim()) {
+      pushLine(
+        state,
+        paint(
+          `  stderr: ${trimOneLine(firstNonEmptyLine(event.stderr), 240)}`,
+          ANSI_GRAY,
+        ),
+      );
+    }
     pushLine(
       state,
       paint(
@@ -97,20 +149,32 @@ export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
         event.exitCode === 0 ? ANSI_GREEN : ANSI_RED,
       ),
     );
-    pushLine(state, `  stdout: ${trimOneLine(firstNonEmptyLine(event.stdout), 240)}`);
-    if (event.stderr.trim()) {
-      pushLine(state, paint(`  stderr: ${trimOneLine(firstNonEmptyLine(event.stderr), 240)}`, ANSI_RED));
-    }
   } else if (event.type === "ask") {
-    pushLine(state, paint(`worker ask(${event.step}): ${event.question}`, ANSI_YELLOW));
+    pushLine(
+      state,
+      paint(`worker ask(${event.step}): ${event.question}`, ANSI_YELLOW),
+    );
   } else if (event.type === "ask-answer") {
-    pushLine(state, paint(`ask answer(${event.step}): ${event.answer}`, ANSI_GREEN));
+    pushLine(
+      state,
+      paint(`ask answer(${event.step}): ${event.answer}`, ANSI_GREEN),
+    );
   } else if (event.type === "main-start") {
     state.activeMainPhase = event.phase;
-    pushLine(state, paint(`main[${event.phase}] started with evidence=${event.evidenceCount}`, ANSI_BLUE));
+    pushLine(
+      state,
+      paint(
+        `main[${event.phase}] started with evidence=${event.evidenceCount}`,
+        ANSI_BLUE,
+      ),
+    );
   } else if (event.type === "main-token") {
     state.activeMainPhase = event.phase;
-    state.mainViews[event.phase] = appendToken(state.mainViews[event.phase], event.token);
+    state.mainViews[event.phase] = appendToken(
+      state.mainViews[event.phase],
+      event.token,
+    );
+    hint = "throttled";
   } else if (event.type === "main-decision") {
     pushLine(
       state,
@@ -120,12 +184,30 @@ export function onTuiEvent(state: TuiState, event: AgentLoopEvent): void {
       ),
     );
   } else if (event.type === "final-answer") {
-    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(event.answer, state.mainViews[state.activeMainPhase]);
-    pushLine(state, paint(`main final report ready[${state.activeMainPhase}] (${event.answer.length} chars)`, ANSI_GREEN));
+    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(
+      event.answer,
+      state.mainViews[state.activeMainPhase],
+    );
+    pushLine(
+      state,
+      paint(
+        `main final report ready[${state.activeMainPhase}] (${event.answer.length} chars)`,
+        ANSI_GREEN,
+      ),
+    );
   } else if (event.type === "complete") {
-    pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
-    pushLine(state, paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN));
+    pushLine(
+      state,
+      paint(
+        `run complete: steps=${event.steps}, evidence=${event.evidenceCount}`,
+        ANSI_GREEN,
+      ),
+    );
+    pushLine(
+      state,
+      paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN),
+    );
   }
 
-  render(state);
+  return hint;
 }
