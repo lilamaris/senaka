@@ -220,6 +220,19 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
       state,
       paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
     );
+  } else if (event.type === "planning-start") {
+    pushLine(state, paint(`planning start: ${trimOneLine(event.goal, 220)}`, ANSI_BLUE));
+  } else if (event.type === "planning-result") {
+    pushLine(
+      state,
+      paint(
+        `planning result: next=${event.next} reason=${trimOneLine(event.reason, 220)}${event.guidance ? ` guidance=${trimOneLine(event.guidance, 140)}` : ""}`,
+        ANSI_CYAN,
+      ),
+    );
+    if (event.evidenceGoals.length > 0) {
+      pushLine(state, paint(`planning goals: ${event.evidenceGoals.map((goal) => trimOneLine(goal, 100)).join(" | ")}`, ANSI_CYAN));
+    }
   } else if (event.type === "compaction-start") {
     pushLine(
       state,

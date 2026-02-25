@@ -78,6 +78,21 @@ async function main(): Promise<void> {
    * 현재는 main-token/final-answer 중심으로만 처리해 로그 노이즈를 줄인다.
    */
   const renderEvent = (event: AgentLoopEvent): void => {
+    if (event.type === "planning-start") {
+      process.stdout.write(`planning(start)> goal=${event.goal}\n`);
+      return;
+    }
+
+    if (event.type === "planning-result") {
+      process.stdout.write(
+        `planning(result)> next=${event.next} reason=${event.reason}${event.guidance ? ` guidance=${event.guidance}` : ""}\n`,
+      );
+      if (event.evidenceGoals.length > 0) {
+        process.stdout.write(`planning(goals)> ${event.evidenceGoals.join(" | ")}\n`);
+      }
+      return;
+    }
+
     if (event.type === "compaction-start") {
       process.stdout.write(
         `\ncontext-compaction(start)> tokens=${event.estimatedTokens}/${event.contextLimitTokens} trigger=${event.triggerTokens} target=${event.targetTokens} messages=${event.messageCount}\n`,

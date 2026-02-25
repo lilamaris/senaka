@@ -1,5 +1,5 @@
 import type { ChatMessage } from "../../types/chat.js";
-import type { EvidenceItem, MainDecision, ToolResult, WorkerAction } from "./types.js";
+import type { EvidenceItem, MainDecision, PlanningResult, ToolResult, WorkerAction } from "./types.js";
 
 export function extractJsonObject(input: string): string {
   const start = input.indexOf("{");
@@ -84,7 +84,37 @@ export function parseMainDecision(raw: string): MainDecision {
   };
 }
 
-export function buildStructuredRepairPrompt(kind: "worker-action" | "main-decision", error: string): ChatMessage {
+export function parsePlanningResult(raw: string): PlanningResult {
+  const parsed = JSON.parse(extractJsonObject(raw)) as Record<string, unknown>;
+  const next = parsed.next;
+  if (next !== "collect_evidence" && next !== "main_decision" && next !== "final_report") {
+    throw new Error("planning next must be collect_evidence, main_decision, or final_report");
+  }
+
+  const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
+  if (!reason) {
+    throw new Error("planning requires reason");
+  }
+
+  const evidenceGoals = Array.isArray(parsed.evidence_goals)
+    ? parsed.evidence_goals.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : undefined;
+  const guidance = typeof parsed.guidance === "string" ? parsed.guidance.trim() : undefined;
+  const answerHint = typeof parsed.answer_hint === "string" ? parsed.answer_hint.trim() : undefined;
+
+  return {
+    next,
+    reason,
+    evidence_goals: evidenceGoals,
+    guidance,
+    answer_hint: answerHint,
+  };
+}
+
+export function buildStructuredRepairPrompt(
+  kind: "worker-action" | "main-decision" | "planning",
+  error: string,
+): ChatMessage {
   if (kind === "worker-action") {
     const lengthHint = /too long|token/i.test(error)
       ? [
@@ -114,6 +144,19 @@ export function buildStructuredRepairPrompt(kind: "worker-action" | "main-decisi
         ...lengthHint,
         ...policyHint,
         ...thinkHint,
+      ].join("\n"),
+    };
+  }
+
+  if (kind === "planning") {
+    return {
+      role: "user",
+      content: [
+        `Your previous output was invalid: ${error}`,
+        "Re-output EXACTLY one valid JSON object.",
+        "Shape:",
+        "{\"next\":\"collect_evidence|main_decision|final_report\",\"reason\":\"...\",\"evidence_goals\":[\"...\"],\"guidance\":\"...\",\"answer_hint\":\"...\"}",
+        "No code block, no explanation, no extra text.",
       ].join("\n"),
     };
   }
@@ -298,6 +341,33 @@ export function buildWorkerMessages(params: {
   ];
 }
 
+export function buildMainPlanningMessages(goal: string, sessionContext: string[]): ChatMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You are planning the first transition of an Evidence Loop.",
+        "Output EXACTLY one JSON object.",
+        "Use shape:",
+        "{\"next\":\"collect_evidence|main_decision|final_report\",\"reason\":\"...\",\"evidence_goals\":[\"...\"],\"guidance\":\"...\",\"answer_hint\":\"...\"}",
+        "Rules:",
+        "- choose collect_evidence when external verification/tool execution is needed.",
+        "- choose main_decision when existing context may be enough but requires sufficiency check.",
+        "- choose final_report when user asks simple explanation/formatting that needs no new evidence.",
+        "- keep reason concise and concrete.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: [
+        `Goal: ${goal}`,
+        "Recent session context:",
+        ...(sessionContext.length > 0 ? sessionContext.map((line, i) => `${i + 1}. ${line}`) : ["none"]),
+      ].join("\n"),
+    },
+  ];
+}
+
 export function buildMainDecisionMessages(goal: string, evidenceSummary: string[], forceFinalize: boolean): ChatMessage[] {
   return [
     {
@@ -321,6 +391,24 @@ export function buildMainDecisionMessages(goal: string, evidenceSummary: string[
       ].join("\n"),
     },
   ];
+}
+
+export function summarizePlanningContext(plan?: PlanningResult): string | undefined {
+  if (!plan) {
+    return undefined;
+  }
+
+  const parts = [
+    `plan_next: ${plan.next}`,
+    `plan_reason: ${plan.reason}`,
+    plan.guidance ? `plan_guidance: ${plan.guidance}` : "",
+    plan.answer_hint ? `plan_answer_hint: ${plan.answer_hint}` : "",
+    plan.evidence_goals && plan.evidence_goals.length > 0
+      ? `plan_evidence_goals: ${plan.evidence_goals.map((value, idx) => `${idx + 1}. ${value}`).join(" | ")}`
+      : "",
+  ].filter(Boolean);
+
+  return parts.join("\n");
 }
 
 export function buildMainFinalAnswerMessages(

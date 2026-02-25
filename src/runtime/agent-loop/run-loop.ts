@@ -9,11 +9,19 @@ import {
   estimateTokenCount,
   summarizeDecisionContext,
   summarizeEvidenceForMain,
+  summarizePlanningContext,
   summarizeToolResult,
   buildWorkerMessages,
 } from "./helpers.js";
-import { askMainForDecision, askMainForFinalAnswer, askWorkerForAction, loadWorkerSystemPrompt, runShellCommand } from "./llm.js";
-import type { AgentLoopOptions, AgentRunResult, EvidenceItem, MainDecision, ToolResult, WorkerAction } from "./types.js";
+import {
+  askMainForDecision,
+  askMainForFinalAnswer,
+  askMainForPlanning,
+  askWorkerForAction,
+  loadWorkerSystemPrompt,
+  runShellCommand,
+} from "./llm.js";
+import type { AgentLoopOptions, AgentRunResult, EvidenceItem, MainDecision, PlanningResult, ToolResult, WorkerAction } from "./types.js";
 
 /**
  * 파일 목적:
@@ -31,11 +39,13 @@ import type { AgentLoopOptions, AgentRunResult, EvidenceItem, MainDecision, Tool
  *
  * 모듈 흐름:
  * 1) 모델 라우팅과 초기 컨텍스트 준비
- * 2) worker가 증거를 수집(call_tool/ask/finalize)
- * 3) main이 continue/finalize 의사결정
- * 4) finalize 시 최종 리포트 생성 후 세션/이벤트로 반환
+ * 2) planning 단계에서 초기 전이(수집/판단/바로 보고) 결정
+ * 3) worker가 증거를 수집(call_tool/ask/finalize)
+ * 4) main이 continue/finalize 의사결정
+ * 5) finalize 시 최종 리포트 생성 후 세션/이벤트로 반환
  */
 enum LoopState {
+  Planning = "planning",
   CompactContext = "compact-context",
   CollectEvidence = "collect-evidence",
   ReviewEvidence = "review-evidence",
@@ -57,6 +67,7 @@ const COMPACTION_MARKER = "[SESSION_COMPACTION]";
  * 분기 함수들(handle*)에서 공통으로 읽고 갱신한다.
  */
 interface LoopRuntime {
+  planning?: PlanningResult;
   evidence: EvidenceItem[];
   guidance: string;
   recentUserAnswer: string;
@@ -268,6 +279,45 @@ function buildCompactedSessionMessages(
   return compacted;
 }
 
+function summarizeSessionForPlanning(messages: SessionEntry[]): string[] {
+  const filtered = messages.filter((message) => {
+    if (!message.content.trim()) {
+      return false;
+    }
+    if (message.role === "system" && message.content.startsWith(COMPACTION_MARKER)) {
+      return false;
+    }
+    return true;
+  });
+
+  const recent = filtered.slice(-16);
+  return recent.map((message) => {
+    const content = isLoopTaggedSystemMessage(message) ? stripLoopTagPrefix(message.content) : message.content.trim();
+    return `${message.role}: ${clipText(content, 220)}`;
+  });
+}
+
+function summarizePlanningForDecision(plan?: PlanningResult): string[] {
+  if (!plan) {
+    return [];
+  }
+
+  const out = [`[planning] next=${plan.next} reason=${plan.reason}`];
+  if (plan.guidance?.trim()) {
+    out.push(`[planning] guidance=${plan.guidance.trim()}`);
+  }
+  if (plan.evidence_goals && plan.evidence_goals.length > 0) {
+    out.push(`[planning] evidence_goals=${plan.evidence_goals.map((goal, idx) => `${idx + 1}. ${goal}`).join(" | ")}`);
+  }
+  return out;
+}
+
+function summarizeDecisionEvidence(runtime: LoopRuntime): string[] {
+  const planningSummary = summarizePlanningForDecision(runtime.planning);
+  const evidenceSummary = summarizeEvidenceForMain(runtime.evidence);
+  return [...planningSummary, ...evidenceSummary];
+}
+
 /**
  * 컨텍스트 초과 시 세션 전체를 압축한다.
  * 요약 문서를 보존하고 최근 메시지 일부만 남겨 모델 입력 여유를 복구한다.
@@ -311,6 +361,88 @@ async function handleContextCompaction(deps: LoopDependencies, runtime: LoopRunt
 }
 
 /**
+ * 루프 시작 planning 단계.
+ * 사용자 요청의 성격을 먼저 분류해 증거 수집이 필요한지 여부를 결정한다.
+ */
+async function handlePlanningTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
+  deps.options?.onEvent?.({ type: "planning-start", goal: deps.goal });
+
+  let planning: PlanningResult;
+  try {
+    planning = await askMainForPlanning({
+      config: deps.config,
+      allowStreaming: deps.routed.stream,
+      goal: deps.goal,
+      sessionContext: summarizeSessionForPlanning(deps.session.messages),
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      mainModel: deps.routed.main,
+    });
+  } catch (error) {
+    const reason = (error as Error).message;
+    planning = {
+      next: "collect_evidence",
+      reason: `planning failed: ${reason}`,
+      guidance: "Collect concrete evidence with safe read-only commands before finalize.",
+    };
+    await appendSystemEntry(deps.config, deps.session, `[PLANNING_FAIL] ${reason}`);
+  }
+
+  runtime.planning = planning;
+  if (planning.guidance?.trim()) {
+    runtime.guidance = planning.guidance.trim();
+  }
+  if (planning.evidence_goals && planning.evidence_goals.length > 0) {
+    runtime.evidence.push({
+      kind: "main_guidance",
+      summary: `planning goals: ${planning.evidence_goals.map((goal, idx) => `${idx + 1}. ${goal}`).join(" | ")}`,
+    });
+  }
+
+  deps.options?.onEvent?.({
+    type: "planning-result",
+    next: planning.next,
+    reason: planning.reason,
+    evidenceGoals: planning.evidence_goals ?? [],
+    guidance: planning.guidance,
+  });
+  await appendSystemEntry(
+    deps.config,
+    deps.session,
+    `[PLANNING_RESULT] next=${planning.next} reason=${clipText(planning.reason, 220)}`,
+  );
+
+  if (planning.next === "collect_evidence") {
+    return LoopState.CollectEvidence;
+  }
+
+  if (planning.next === "main_decision") {
+    return LoopState.ReviewEvidence;
+  }
+
+  const evidenceSummary = summarizeDecisionEvidence(runtime);
+  try {
+    runtime.finalAnswer = await askMainForFinalAnswer({
+      config: deps.config,
+      goal: deps.goal,
+      evidenceSummary,
+      decisionContext: summarizePlanningContext(runtime.planning),
+      planning: runtime.planning,
+      draft: planning.answer_hint?.trim(),
+      allowStreaming: deps.routed.stream,
+      onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      mainModel: deps.routed.main,
+    });
+  } catch (error) {
+    const reason = (error as Error).message;
+    runtime.finalAnswer = fallbackFinalAnswer(deps.goal, evidenceSummary);
+    await appendSystemEntry(deps.config, deps.session, `[PLANNING_FINAL_REPORT_FAIL] ${reason}`);
+  }
+
+  deps.options?.onEvent?.({ type: "final-answer", answer: runtime.finalAnswer });
+  return LoopState.Complete;
+}
+
+/**
  * main 의사결정 결과를 바탕으로 최종 사용자 응답을 생성한다.
  * 실패 시에도 사용자에게 응답이 없지 않도록 fallbackFinalAnswer를 반환한다.
  */
@@ -329,6 +461,7 @@ async function buildFinalAnswerFromDecision(params: {
       goal: params.deps.goal,
       evidenceSummary: params.evidenceSummary,
       decisionContext,
+      planning: params.runtime.planning,
       draft,
       allowStreaming: params.deps.routed.stream,
       onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", token }),
@@ -467,7 +600,7 @@ async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRuntime): P
  */
 async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
   deps.options?.onEvent?.({ type: "main-start", evidenceCount: runtime.evidence.length });
-  const evidenceSummary = summarizeEvidenceForMain(runtime.evidence);
+  const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   let decision: MainDecision;
   try {
@@ -522,7 +655,7 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
  */
 async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
   deps.options?.onEvent?.({ type: "main-start", evidenceCount: runtime.evidence.length });
-  const evidenceSummary = summarizeEvidenceForMain(runtime.evidence);
+  const evidenceSummary = summarizeDecisionEvidence(runtime);
 
   try {
     const decision = await askMainForDecision({
@@ -539,6 +672,7 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
       goal: deps.goal,
       evidenceSummary,
       decisionContext: summarizeDecisionContext(decision),
+      planning: runtime.planning,
       draft: decision.answer?.trim(),
       allowStreaming: deps.routed.stream,
       onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
@@ -585,9 +719,9 @@ export async function runAgentLoop(
     finalAnswer: "",
     steps: 0,
     step: 1,
-    resumeStateAfterCompaction: LoopState.CollectEvidence,
+    resumeStateAfterCompaction: LoopState.Planning,
   };
-  let state: LoopState = LoopState.CollectEvidence;
+  let state: LoopState = LoopState.Planning;
   const deps: LoopDependencies = {
     config,
     session,
@@ -612,6 +746,11 @@ export async function runAgentLoop(
 
     if (state === LoopState.CompactContext) {
       state = await handleContextCompaction(deps, runtime);
+      continue;
+    }
+
+    if (state === LoopState.Planning) {
+      state = await handlePlanningTurn(deps, runtime);
       continue;
     }
 

@@ -4,19 +4,22 @@ import type { AppConfig } from "../../config/env.js";
 import type { ChatCompletionApi, CompletionRequest } from "../../core/api/chat-completion.js";
 import { runInSandbox } from "../sandbox-executor.js";
 import {
+  buildMainPlanningMessages,
   buildMainDecisionMessages,
   buildMainFinalAnswerMessages,
   buildStructuredRepairPrompt,
   fallbackFinalAnswer,
   looksLikeStructuredOutput,
   parseMainDecision,
+  parsePlanningResult,
   parseWorkerAction,
   stripThinkBlocks,
+  summarizePlanningContext,
   tryExtractAnswerField,
   validateCommandSafety,
   validateWorkerReplyTokenLimit,
 } from "./helpers.js";
-import type { MainDecision, ToolResult, WorkerAction } from "./types.js";
+import type { MainDecision, PlanningResult, ToolResult, WorkerAction } from "./types.js";
 import type { ChatMessage } from "../../types/chat.js";
 import type { ResolvedModelCandidate } from "../../types/model.js";
 
@@ -38,10 +41,12 @@ import type { ResolvedModelCandidate } from "../../types/model.js";
  * 3) 성공 시 파싱 결과 반환, 실패 시 상위 루프에서 폴백 처리
  */
 const WORKER_SYSTEM_PROMPT_PATH = "data/worker/SYSTEM.md";
+const MAIN_PLANNING_RETRY_LIMIT = 2;
 const MAIN_DECISION_RETRY_LIMIT = 2;
 const MAIN_FINAL_ANSWER_RETRY_LIMIT = 2;
 // 샘플링 정책: worker/main-decision은 안정성 중심, final-report는 표현력 중심
 const WORKER_SAMPLING = { temperature: 0.7, topP: 1.0 } as const;
+const MAIN_PLANNING_SAMPLING = { temperature: 0.7, topP: 1.0 } as const;
 const MAIN_DECISION_SAMPLING = { temperature: 0.7, topP: 1.0 } as const;
 const MAIN_FINAL_REPORT_SAMPLING = { temperature: 1.0, topP: 0.95 } as const;
 
@@ -90,7 +95,7 @@ async function requestStructuredWithRepair<T>(params: {
   streamOnFirstAttempt: boolean;
   requestForAttempt: (messages: ChatMessage[], attempt: number) => Omit<CompletionRequest, "messages">;
   parse: (rawContent: string) => T;
-  repairKind: "worker-action" | "main-decision";
+  repairKind: "worker-action" | "main-decision" | "planning";
   onToken?: (token: string) => void;
 }): Promise<T> {
   let messages = params.baseMessages;
@@ -152,6 +157,39 @@ export async function runShellCommand(config: AppConfig, cmd: string, workspaceG
 export async function loadWorkerSystemPrompt(): Promise<string> {
   const raw = await readFile(WORKER_SYSTEM_PROMPT_PATH, "utf-8");
   return raw.trim();
+}
+
+/**
+ * 루프 시작 전 planning 단계를 수행한다.
+ * 사용자 목적과 기존 대화 맥락을 바탕으로 다음 상태 전이를 결정한다.
+ */
+export async function askMainForPlanning(params: {
+  config: AppConfig;
+  allowStreaming: boolean;
+  goal: string;
+  sessionContext: string[];
+  onToken?: (token: string) => void;
+  mainModel: ResolvedModelCandidate;
+}): Promise<PlanningResult> {
+  const baseMessages = buildMainPlanningMessages(params.goal, params.sessionContext);
+  const mainApi = resolveChatCompletionApi(params.mainModel);
+
+  return requestStructuredWithRepair({
+    api: mainApi,
+    baseMessages,
+    retryLimit: MAIN_PLANNING_RETRY_LIMIT,
+    streamOnFirstAttempt: params.allowStreaming,
+    requestForAttempt: (_messages, _attempt) => ({
+      disableThinkingHack: params.config.mainDecisionDisableThinkingHack,
+      thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+      ...MAIN_PLANNING_SAMPLING,
+      debugEnabled: params.config.debugLlmRequests,
+      debugTag: "main-planning",
+    }),
+    parse: parsePlanningResult,
+    repairKind: "planning",
+    onToken: params.onToken,
+  });
 }
 
 /**
@@ -247,16 +285,19 @@ export async function askMainForFinalAnswer(params: {
   goal: string;
   evidenceSummary: string[];
   decisionContext?: string;
+  planning?: PlanningResult;
   draft?: string;
   allowStreaming: boolean;
   onToken?: (token: string) => void;
   mainModel: ResolvedModelCandidate;
 }): Promise<string> {
+  const planningContext = summarizePlanningContext(params.planning);
+  const mergedDecisionContext = [planningContext, params.decisionContext].filter(Boolean).join("\n");
   const mainApi = resolveChatCompletionApi(params.mainModel);
   const baseMessages = buildMainFinalAnswerMessages(
     params.goal,
     params.evidenceSummary,
-    params.decisionContext,
+    mergedDecisionContext || undefined,
     params.draft,
   );
   let messages = baseMessages;

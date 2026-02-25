@@ -56,12 +56,22 @@ export interface MainDecision {
   needed_evidence?: string[];
 }
 
+export interface PlanningResult {
+  next: "collect_evidence" | "main_decision" | "final_report";
+  reason: string;
+  evidence_goals?: string[];
+  guidance?: string;
+  answer_hint?: string;
+}
+
 /**
  * 런타임 이벤트 스트림 계약.
  * UI는 이 유니온 타입만 구독하면 루프 진행 상태를 재현할 수 있다.
  */
 export type AgentLoopEvent =
   | { type: "start"; agentId: string; mode: AgentMode; goal: string }
+  | { type: "planning-start"; goal: string }
+  | { type: "planning-result"; next: PlanningResult["next"]; reason: string; evidenceGoals: string[]; guidance?: string }
   | {
       type: "compaction-start";
       estimatedTokens: number;
