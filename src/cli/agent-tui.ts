@@ -102,6 +102,12 @@ function paint(text: string, ...styles: string[]): string {
   return `${styles.join("")}${text}${ANSI_RESET}`;
 }
 
+function paintFullWidthLine(text: string, width: number, ...styles: string[]): string {
+  const target = Math.max(1, width);
+  const sliced = text.length > target ? text.slice(0, target) : text;
+  return paint(sliced.padEnd(target, " "), ...styles);
+}
+
 function trimOneLine(text: string, maxLen = 180): string {
   const one = text.replace(/\s+/g, " ").trim();
   if (one.length <= maxLen) {
@@ -375,11 +381,15 @@ async function main(): Promise<void> {
     state.busy = true;
     state.workerView = createView();
     state.mainView = createView();
+    const fullWidth = Math.max(40, output.columns || 100);
+    const contentWidth = Math.max(20, fullWidth - 2);
     pushSpacer(state);
-    pushRawLine(state, paint(" USER GOAL ", ANSI_BG_USER, ANSI_WHITE, ANSI_BOLD));
-    for (const wrapped of wrapParagraphs(line, Math.max(40, (output.columns || 100) - 10))) {
-      pushRawLine(state, paint(` ${wrapped}`, ANSI_BG_USER, ANSI_WHITE));
+    pushRawLine(state, paintFullWidthLine("", fullWidth, ANSI_BG_USER));
+    pushRawLine(state, paintFullWidthLine(" USER GOAL ", fullWidth, ANSI_BG_USER, ANSI_WHITE, ANSI_BOLD));
+    for (const wrapped of wrapParagraphs(line, contentWidth)) {
+      pushRawLine(state, paintFullWidthLine(` ${wrapped}`, fullWidth, ANSI_BG_USER, ANSI_WHITE));
     }
+    pushRawLine(state, paintFullWidthLine("", fullWidth, ANSI_BG_USER));
     pushSpacer(state);
     render(state);
 
