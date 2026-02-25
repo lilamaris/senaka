@@ -35,6 +35,7 @@
   - 세션 저장소: `src/runtime/session-store.ts`
   - chat turn 실행: `src/runtime/chat-service.ts`
   - CLI 엔트리: `src/cli/chat.ts`, `src/cli/chat-turn.ts`, `src/cli/models-list.ts`
+  - TUI 구성: `src/cli/agent-tui.ts`, `src/cli/agent-tui-view.ts`, `src/cli/agent-tui-events.ts`
   - planning 기반 조건부 전이 + context compaction 상태 머신
 
 ## 문서 네비게이션

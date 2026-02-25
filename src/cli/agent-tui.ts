@@ -1,429 +1,39 @@
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { loadConfig } from "../config/env.js";
-import { runAgentLoop, type AgentLoopEvent } from "../runtime/agent-loop.js";
+import { runAgentLoop } from "../runtime/agent-loop.js";
 import { loadOrCreateSession } from "../runtime/session-store.js";
-import type { AgentMode } from "../types/model.js";
+import { onTuiEvent } from "./agent-tui-events.js";
+import {
+  ANSI_BG_USER,
+  ANSI_BOLD,
+  ANSI_WHITE,
+  createInitialState,
+  createMainViews,
+  createView,
+  paintFullWidthLine,
+  pushLine,
+  pushRawLine,
+  pushSpacer,
+  render,
+  trimOneLine,
+  wrapParagraphs,
+} from "./agent-tui-view.js";
 
-interface StreamView {
-  raw: string;
-  think: string;
-  final: string;
-  phase: "idle" | "thinking" | "final";
-}
-
-type MainPhase = Extract<AgentLoopEvent, { type: "main-token" }>["phase"];
-
-interface TuiState {
-  sessionId: string;
-  agentId: string;
-  groupId?: string;
-  modeOverride?: AgentMode;
-  maxStepsOverride?: number;
-  streamOverride?: boolean;
-  busy: boolean;
-  turn: number;
-  lines: string[];
-  workerView: StreamView;
-  mainViews: Record<MainPhase, StreamView>;
-  activeMainPhase: MainPhase;
-  toolTraceByStep: Record<number, { reason?: string; cmd?: string }>;
-}
-
-const ANSI_GRAY = "\x1b[90m";
-const ANSI_CYAN = "\x1b[36m";
-const ANSI_BLUE = "\x1b[34m";
-const ANSI_GREEN = "\x1b[32m";
-const ANSI_YELLOW = "\x1b[33m";
-const ANSI_RED = "\x1b[31m";
-const ANSI_BOLD = "\x1b[1m";
-const ANSI_BG_USER = "\x1b[48;5;24m";
-const ANSI_WHITE = "\x1b[97m";
-const ANSI_RESET = "\x1b[0m";
-const MAIN_PHASE_ORDER: MainPhase[] = ["planning", "assess-sufficiency", "forced-synthesis", "final-report"];
-const MAIN_PHASE_LABEL: Record<MainPhase, string> = {
-  planning: "MAIN STREAM / PLAN INTENT",
-  "assess-sufficiency": "MAIN STREAM / ASSESS SUFFICIENCY",
-  "forced-synthesis": "MAIN STREAM / FORCED SYNTHESIS",
-  "final-report": "MAIN STREAM / FINAL REPORT",
-};
-const THINK_FOLD_LINES_DEFAULT = 44;
-const THINK_FOLD_LINES_FORCED = 20;
-
-function now(): string {
-  return new Date().toISOString().slice(11, 19);
-}
-
-function createView(): StreamView {
-  return { raw: "", think: "", final: "", phase: "idle" };
-}
-
-function createMainViews(): Record<MainPhase, StreamView> {
-  return {
-    planning: createView(),
-    "assess-sufficiency": createView(),
-    "forced-synthesis": createView(),
-    "final-report": createView(),
-  };
-}
-
-function viewFromFinalAnswer(answer: string, previous?: StreamView): StreamView {
-  const clean = answer.trim();
-  if (!clean) {
-    return previous ?? createView();
-  }
-  const parsed = parseThinkBlocks(clean);
-  if (parsed.think.trim().length > 0 || clean.includes("<think>")) {
-    return parsed;
-  }
-
-  // 스트리밍 중 think/final이 이미 분리된 경우, final-answer가 think를 생략해도 기존 think를 보존한다.
-  const previousHasThink = Boolean(previous && (previous.think.trim().length > 0 || previous.raw.includes("<think>")));
-  if (previousHasThink) {
-    const think = previous?.think ?? "";
-    return {
-      raw: `<think>${think}</think>${clean}`,
-      think,
-      final: clean,
-      phase: "final",
-    };
-  }
-
-  return { raw: clean, think: "", final: clean, phase: "final" };
-}
-
-function parseThinkBlocks(raw: string): StreamView {
-  const startTag = "<think>";
-  const endTag = "</think>";
-  const start = raw.indexOf(startTag);
-
-  if (start < 0) {
-    return { raw, think: "", final: raw, phase: raw.trim() ? "final" : "idle" };
-  }
-
-  const end = raw.indexOf(endTag, start + startTag.length);
-  if (end < 0) {
-    return { raw, think: raw.slice(start + startTag.length), final: "", phase: "thinking" };
-  }
-
-  return {
-    raw,
-    think: raw.slice(start + startTag.length, end),
-    final: raw.slice(end + endTag.length),
-    phase: "final",
-  };
-}
-
-function appendToken(view: StreamView, token: string): StreamView {
-  return parseThinkBlocks(view.raw + token);
-}
-
-function wrapLine(text: string, width: number): string[] {
-  if (width <= 8) {
-    return [text];
-  }
-  const out: string[] = [];
-  let remain = text;
-  while (remain.length > width) {
-    out.push(remain.slice(0, width));
-    remain = remain.slice(width);
-  }
-  out.push(remain);
-  return out;
-}
-
-function wrapParagraphs(text: string, width: number): string[] {
-  const out: string[] = [];
-  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
-    if (!line) {
-      out.push("");
-      continue;
-    }
-    out.push(...wrapLine(line, width));
-  }
-  return out;
-}
-
-function paint(text: string, ...styles: string[]): string {
-  return `${styles.join("")}${text}${ANSI_RESET}`;
-}
-
-function paintFullWidthLine(text: string, width: number, ...styles: string[]): string {
-  const target = Math.max(1, width);
-  const sliced = text.length > target ? text.slice(0, target) : text;
-  return paint(sliced.padEnd(target, " "), ...styles);
-}
-
-function trimOneLine(text: string, maxLen = 180): string {
-  const one = text.replace(/\s+/g, " ").trim();
-  if (one.length <= maxLen) {
-    return one || "<empty>";
-  }
-  return `${one.slice(0, maxLen)}...`;
-}
-
-function firstNonEmptyLine(text: string): string {
-  const line = text
-    .split("\n")
-    .map((value) => value.trim())
-    .find((value) => value.length > 0);
-  return line ?? "<empty>";
-}
-
-function pushRawLine(state: TuiState, text: string): void {
-  state.lines.push(text);
-  if (state.lines.length > 350) {
-    state.lines = state.lines.slice(-350);
-  }
-}
-
-function pushLine(state: TuiState, text: string): void {
-  pushRawLine(state, `[${now()}] ${text}`);
-}
-
-function pushSpacer(state: TuiState): void {
-  pushRawLine(state, "");
-}
-
-function separator(char: string, width: number): string {
-  return char.repeat(Math.max(40, width));
-}
-
-function foldMiddleLines(lines: string[], maxLines: number): string[] {
-  if (lines.length <= maxLines || maxLines < 7) {
-    return lines;
-  }
-  const head = Math.max(3, Math.floor(maxLines * 0.25));
-  const tail = Math.max(3, maxLines - head - 1);
-  const hidden = lines.length - head - tail;
-  return [...lines.slice(0, head), `... (${hidden} lines folded) ...`, ...lines.slice(-tail)];
-}
-
-function renderStreamSection(
-  title: string,
-  view: StreamView,
-  width: number,
-  options?: {
-    grayThink?: boolean;
-    thinkLineLimit?: number;
-  },
-): string[] {
-  const out: string[] = [paint(`[${title}]`, ANSI_BOLD, ANSI_CYAN)];
-  const bodyWidth = Math.max(40, width - 4);
-
-  if (!view.raw.trim()) {
-    out.push("(no output yet)");
-    return out;
-  }
-
-  if (view.think.trim().length > 0 || view.raw.includes("<think>")) {
-    out.push("THINK PHASE:");
-    const thinkLines = wrapParagraphs(view.think || "(thinking...)", bodyWidth);
-    const foldedThinkLines =
-      typeof options?.thinkLineLimit === "number"
-        ? foldMiddleLines(thinkLines, options.thinkLineLimit)
-        : thinkLines;
-    out.push(...(options?.grayThink ? foldedThinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`) : foldedThinkLines));
-    out.push("");
-    out.push("FINAL RESPONSE:");
-    out.push(...wrapParagraphs(view.final || "(waiting final response)", bodyWidth));
-    return out;
-  }
-
-  out.push("RESPONSE:");
-  out.push(...wrapParagraphs(view.final || view.raw, bodyWidth));
-  return out;
-}
-
-function hasRenderableStream(view: StreamView): boolean {
-  return view.raw.trim().length > 0 || view.final.trim().length > 0 || view.think.trim().length > 0;
-}
-
-function renderMainSections(state: TuiState, width: number): string[] {
-  const out: string[] = [];
-  const visiblePhases = MAIN_PHASE_ORDER.filter(
-    (phase) => phase === state.activeMainPhase || hasRenderableStream(state.mainViews[phase]),
-  );
-
-  if (visiblePhases.length === 0) {
-    return renderStreamSection("MAIN STREAM", createView(), width, {
-      grayThink: true,
-      thinkLineLimit: THINK_FOLD_LINES_DEFAULT,
-    });
-  }
-
-  for (const [index, phase] of visiblePhases.entries()) {
-    if (index > 0) {
-      out.push(paint(separator("─", Math.max(40, width - 4)), ANSI_GRAY));
-    }
-    out.push(
-      ...renderStreamSection(MAIN_PHASE_LABEL[phase], state.mainViews[phase], width, {
-        grayThink: true,
-        thinkLineLimit: phase === "forced-synthesis" ? THINK_FOLD_LINES_FORCED : THINK_FOLD_LINES_DEFAULT,
-      }),
-    );
-  }
-
-  return out;
-}
-
-function render(state: TuiState): void {
-  const width = output.columns || 100;
-  const topSep = separator("─", width);
-  const midSep = separator("─", width);
-
-  output.write("\x1b[2J\x1b[H");
-  output.write(paint("Senaka Agent TUI", ANSI_BOLD, ANSI_CYAN) + "\n");
-  output.write(
-    paint(
-      `session=${state.sessionId} group=${state.groupId ?? state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}`,
-      ANSI_BLUE,
-    ) + "\n",
-  );
-  output.write(paint(topSep, ANSI_BLUE) + "\n");
-
-  for (const line of state.lines.slice(-80)) {
-    output.write(line + "\n");
-  }
-
-  output.write(paint(midSep, ANSI_BLUE) + "\n");
-  for (const line of renderStreamSection("WORKER STREAM", state.workerView, width)) {
-    output.write(line + "\n");
-  }
-
-  output.write(paint(midSep, ANSI_BLUE) + "\n");
-  for (const line of renderMainSections(state, width)) {
-    output.write(line + "\n");
-  }
-
-  output.write(paint(topSep, ANSI_BLUE) + "\n");
-  output.write(
-    "Commands: /agent ID, /group ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit\n",
-  );
-  output.write("Type any goal and press Enter to run a turn.\n\n");
-}
-
-function onEvent(state: TuiState, event: AgentLoopEvent): void {
-  if (event.type === "start") {
-    state.turn += 1;
-    state.toolTraceByStep = {};
-    pushLine(state, paint(`=== TURN ${state.turn} START ===`, ANSI_BOLD, ANSI_CYAN));
-    pushLine(
-      state,
-      paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
-    );
-  } else if (event.type === "loop-state") {
-    pushLine(
-      state,
-      paint(
-        `state ${event.state}: step=${event.step} evidence=${event.evidenceCount} :: ${trimOneLine(event.summary, 220)}`,
-        ANSI_BLUE,
-      ),
-    );
-  } else if (event.type === "planning-start") {
-    pushLine(state, paint(`planning start: ${trimOneLine(event.goal, 220)}`, ANSI_BLUE));
-  } else if (event.type === "planning-result") {
-    pushLine(
-      state,
-      paint(
-        `planning result: next=${event.next} reason=${trimOneLine(event.reason, 220)}${event.guidance ? ` guidance=${trimOneLine(event.guidance, 140)}` : ""}`,
-        ANSI_CYAN,
-      ),
-    );
-    if (event.evidenceGoals.length > 0) {
-      pushLine(state, paint(`planning goals: ${event.evidenceGoals.map((goal) => trimOneLine(goal, 100)).join(" | ")}`, ANSI_CYAN));
-    }
-  } else if (event.type === "compaction-start") {
-    pushLine(
-      state,
-      paint(
-        `context compaction start: tokens=${event.estimatedTokens}/${event.contextLimitTokens}, trigger=${event.triggerTokens}, target=${event.targetTokens}, messages=${event.messageCount}`,
-        ANSI_YELLOW,
-      ),
-    );
-  } else if (event.type === "compaction-complete") {
-    pushLine(
-      state,
-      paint(
-        `context compaction complete: tokens ${event.beforeTokens} -> ${event.afterTokens}, messages ${event.beforeMessages} -> ${event.afterMessages}`,
-        ANSI_GREEN,
-      ),
-    );
-  } else if (event.type === "worker-start") {
-    pushLine(state, paint(`worker step ${event.step} started`, ANSI_BLUE));
-  } else if (event.type === "worker-token") {
-    state.workerView = appendToken(state.workerView, event.token);
-  } else if (event.type === "worker-action") {
-    if (event.action === "call_tool") {
-      state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), reason: event.detail };
-    } else {
-      pushLine(state, `worker action(${event.step}): ${event.action} :: ${event.detail}`);
-    }
-  } else if (event.type === "tool-start") {
-    state.toolTraceByStep[event.step] = { ...(state.toolTraceByStep[event.step] ?? {}), cmd: event.cmd };
-  } else if (event.type === "tool-result") {
-    const trace = state.toolTraceByStep[event.step] ?? {};
-    pushLine(state, paint(`Evidence Loop step ${event.step}`, ANSI_BOLD, ANSI_YELLOW));
-    pushLine(state, paint(`  reason: ${trimOneLine(trace.reason ?? "<missing reason>")}`, ANSI_YELLOW));
-    pushLine(state, paint(`  cmd   : ${trimOneLine(trace.cmd ?? "<missing cmd>", 260)}`, ANSI_WHITE));
-    pushLine(
-      state,
-      paint(
-        `  result: exit=${event.exitCode} runner=${event.runner} group=${event.workspaceGroupId}`,
-        event.exitCode === 0 ? ANSI_GREEN : ANSI_RED,
-      ),
-    );
-    pushLine(state, `  stdout: ${trimOneLine(firstNonEmptyLine(event.stdout), 240)}`);
-    if (event.stderr.trim()) {
-      pushLine(state, paint(`  stderr: ${trimOneLine(firstNonEmptyLine(event.stderr), 240)}`, ANSI_RED));
-    }
-  } else if (event.type === "ask") {
-    pushLine(state, paint(`worker ask(${event.step}): ${event.question}`, ANSI_YELLOW));
-  } else if (event.type === "ask-answer") {
-    pushLine(state, paint(`ask answer(${event.step}): ${event.answer}`, ANSI_GREEN));
-  } else if (event.type === "main-start") {
-    state.activeMainPhase = event.phase;
-    pushLine(state, paint(`main[${event.phase}] started with evidence=${event.evidenceCount}`, ANSI_BLUE));
-  } else if (event.type === "main-token") {
-    state.activeMainPhase = event.phase;
-    state.mainViews[event.phase] = appendToken(state.mainViews[event.phase], event.token);
-  } else if (event.type === "main-decision") {
-    pushLine(
-      state,
-      paint(
-        `main decision[${event.phase}]: ${event.decision}${event.guidance ? ` :: ${trimOneLine(event.guidance, 220)}` : ""}`,
-        event.decision === "finalize" ? ANSI_GREEN : ANSI_YELLOW,
-      ),
-    );
-  } else if (event.type === "final-answer") {
-    state.mainViews[state.activeMainPhase] = viewFromFinalAnswer(event.answer, state.mainViews[state.activeMainPhase]);
-    pushLine(state, paint(`main final report ready[${state.activeMainPhase}] (${event.answer.length} chars)`, ANSI_GREEN));
-  } else if (event.type === "complete") {
-    pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
-    pushLine(state, paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN));
-  }
-
-  render(state);
-}
-
+/**
+ * 파일 목적:
+ * - interactive TUI 실행 루프를 담당한다.
+ *
+ * 주요 의존성:
+ * - agent-tui-view.ts: 화면 렌더링/상태 유틸
+ * - agent-tui-events.ts: 이벤트 -> 상태 리듀서
+ *
+ * 역의존성:
+ * - package.json `npm run agent:tui`
+ */
 async function main(): Promise<void> {
   const config = loadConfig();
-  const state: TuiState = {
-    sessionId: "default",
-    agentId: "default",
-    groupId: undefined,
-    modeOverride: undefined,
-    maxStepsOverride: undefined,
-    streamOverride: undefined,
-    busy: false,
-    turn: 0,
-    lines: [],
-    workerView: createView(),
-    mainViews: createMainViews(),
-    activeMainPhase: "planning",
-    toolTraceByStep: {},
-  };
-
+  const state = createInitialState();
   const rl = readline.createInterface({ input, output });
 
   pushLine(state, "TUI ready");
@@ -545,7 +155,7 @@ async function main(): Promise<void> {
         maxSteps: state.maxStepsOverride,
         stream: state.streamOverride,
         workspaceGroupId: state.groupId,
-        onEvent: (event) => onEvent(state, event),
+        onEvent: (event) => onTuiEvent(state, event),
         askUser: async (question) => {
           pushLine(state, `ASK REQUIRED: ${question}`);
           render(state);
@@ -557,7 +167,7 @@ async function main(): Promise<void> {
       pushLine(state, `resolved mode: ${result.mode}, maxSteps: ${result.maxSteps}, stream: ${result.stream}`);
       pushLine(state, `worker model: ${result.workerModel}`);
       pushLine(state, `main model: ${result.mainModel}`);
-      pushLine(state, `final: ${result.summary.replace(/\s+/g, " ").slice(0, 280)}`);
+      pushLine(state, `final: ${trimOneLine(result.summary, 280)}`);
     } catch (error) {
       pushLine(state, `error: ${(error as Error).message}`);
     } finally {
