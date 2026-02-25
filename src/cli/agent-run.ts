@@ -1,10 +1,27 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { loadConfig } from "../config/env.js";
-import { runAgentLoop } from "../runtime/agent-loop.js";
+import { runAgentLoop, type AgentLoopEvent } from "../runtime/agent-loop.js";
 import { loadOrCreateSession } from "../runtime/session-store.js";
 import type { AgentMode } from "../types/model.js";
 
+/**
+ * 파일 목적:
+ * - 단일 goal을 실행하는 비대화형 CLI 엔트리포인트.
+ *
+ * 주요 의존성:
+ * - runtime/agent-loop: 상태 머신 실행
+ * - runtime/session-store: 세션 로드/생성
+ *
+ * 역의존성:
+ * - package.json의 `npm run agent:run` 스크립트
+ *
+ * 모듈 흐름:
+ * 1) 인자 파싱
+ * 2) 세션 복구
+ * 3) 루프 실행 + 이벤트 스트림 출력
+ * 4) 최종 summary/evidence 출력
+ */
 interface Args {
   sessionId: string;
   goal: string;
@@ -15,6 +32,9 @@ interface Args {
   stream?: boolean;
 }
 
+/**
+ * CLI 인자를 런타임 실행 옵션으로 변환한다.
+ */
 function parseArgs(argv: string[]): Args {
   const sessionIdx = argv.indexOf("--session");
   const goalIdx = argv.indexOf("--goal");
@@ -42,11 +62,50 @@ function parseArgs(argv: string[]): Args {
   return { sessionId, goal, agentId, groupId, mode, maxSteps, stream: noStream ? false : undefined };
 }
 
+/**
+ * CLI 실행 메인 함수.
+ * main-token 이벤트를 별도 스트림으로 출력해 final report 생성 중 진행 상황을 보여준다.
+ */
 async function main(): Promise<void> {
   const config = loadConfig();
   const args = parseArgs(process.argv.slice(2));
   const session = await loadOrCreateSession(config.sessionDir, args.sessionId, config.systemPrompt);
   const rl = createInterface({ input, output });
+  let mainStreaming = false;
+
+  /**
+   * 루프 이벤트를 CLI 출력으로 투영한다.
+   * 현재는 main-token/final-answer 중심으로만 처리해 로그 노이즈를 줄인다.
+   */
+  const renderEvent = (event: AgentLoopEvent): void => {
+    if (event.type === "compaction-start") {
+      process.stdout.write(
+        `\ncontext-compaction(start)> tokens=${event.estimatedTokens}/${event.contextLimitTokens} trigger=${event.triggerTokens} target=${event.targetTokens} messages=${event.messageCount}\n`,
+      );
+      return;
+    }
+
+    if (event.type === "compaction-complete") {
+      process.stdout.write(
+        `context-compaction(done)> tokens=${event.beforeTokens}->${event.afterTokens} messages=${event.beforeMessages}->${event.afterMessages}\n`,
+      );
+      return;
+    }
+
+    if (event.type === "main-token") {
+      if (!mainStreaming) {
+        process.stdout.write("\nmain(stream)> ");
+        mainStreaming = true;
+      }
+      process.stdout.write(event.token);
+      return;
+    }
+
+    if (event.type === "final-answer" && mainStreaming) {
+      process.stdout.write("\n");
+      mainStreaming = false;
+    }
+  };
 
   process.stdout.write(`agent profile: ${args.agentId}\n`);
   process.stdout.write(`workspace group: ${args.groupId ?? session.id}\n`);
@@ -57,11 +116,22 @@ async function main(): Promise<void> {
       maxSteps: args.maxSteps,
       stream: args.stream,
       workspaceGroupId: args.groupId,
+      onEvent: renderEvent,
       askUser: async (question) => {
+        // 스트리밍 출력 중 사용자 입력 프롬프트가 섞이면 가독성이 크게 떨어져 개행 정리 후 질문한다.
+        if (mainStreaming) {
+          process.stdout.write("\n");
+          mainStreaming = false;
+        }
         process.stdout.write(`ask> ${question}\n`);
         return (await rl.question("answer(YES/NO)> ")).trim();
       },
     });
+
+    if (mainStreaming) {
+      process.stdout.write("\n");
+      mainStreaming = false;
+    }
 
     process.stdout.write(`resolved mode: ${result.mode}\n`);
     process.stdout.write(`resolved maxSteps: ${result.maxSteps}\n`);

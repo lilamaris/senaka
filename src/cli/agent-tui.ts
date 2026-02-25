@@ -46,6 +46,14 @@ function createView(): StreamView {
   return { raw: "", think: "", final: "", phase: "idle" };
 }
 
+function viewFromFinalAnswer(answer: string): StreamView {
+  const clean = answer.trim();
+  if (!clean) {
+    return createView();
+  }
+  return { raw: clean, think: "", final: clean, phase: "final" };
+}
+
 function parseThinkBlocks(raw: string): StreamView {
   const startTag = "<think>";
   const endTag = "</think>";
@@ -212,6 +220,22 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
       state,
       paint(`run start: agent=${event.agentId} mode=${event.mode} goal=${trimOneLine(event.goal, 220)}`, ANSI_CYAN),
     );
+  } else if (event.type === "compaction-start") {
+    pushLine(
+      state,
+      paint(
+        `context compaction start: tokens=${event.estimatedTokens}/${event.contextLimitTokens}, trigger=${event.triggerTokens}, target=${event.targetTokens}, messages=${event.messageCount}`,
+        ANSI_YELLOW,
+      ),
+    );
+  } else if (event.type === "compaction-complete") {
+    pushLine(
+      state,
+      paint(
+        `context compaction complete: tokens ${event.beforeTokens} -> ${event.afterTokens}, messages ${event.beforeMessages} -> ${event.afterMessages}`,
+        ANSI_GREEN,
+      ),
+    );
   } else if (event.type === "worker-start") {
     pushLine(state, paint(`worker step ${event.step} started`, ANSI_BLUE));
   } else if (event.type === "worker-token") {
@@ -256,6 +280,9 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
         event.decision === "finalize" ? ANSI_GREEN : ANSI_YELLOW,
       ),
     );
+  } else if (event.type === "final-answer") {
+    state.mainView = viewFromFinalAnswer(event.answer);
+    pushLine(state, paint(`main final report ready (${event.answer.length} chars)`, ANSI_GREEN));
   } else if (event.type === "complete") {
     pushLine(state, paint(`run complete: steps=${event.steps}, evidence=${event.evidenceCount}`, ANSI_GREEN));
     pushLine(state, paint(`=== TURN ${state.turn} END ===`, ANSI_BOLD, ANSI_CYAN));

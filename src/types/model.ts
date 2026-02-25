@@ -19,6 +19,7 @@ export interface ModelDefinition {
   model?: string;
   modelEnv?: string;
   modelFallbackEnvs?: string[];
+  contextLength?: number;
   temperature?: number;
   maxTokens?: number;
   extraBody?: Record<string, unknown>;
@@ -46,6 +47,7 @@ export interface ResolvedModelCandidate {
   baseUrl: string;
   apiKey: string;
   model: string;
+  contextLength?: number;
   temperature?: number;
   maxTokens?: number;
   extraBody?: Record<string, unknown>;

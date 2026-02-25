@@ -12,14 +12,16 @@
     {
       "id": "main-default",
       "serverId": "lmstudio-local",
-      "model": "glm-4.7-flash@q4_1",
+      "model": "unsloth/glm-4.7-flash",
+      "contextLength": 32768,
       "temperature": 0.2,
       "description": "Primary synthesis model"
     },
     {
       "id": "worker-fast",
       "serverId": "lmstudio-local",
-      "model": "glm-4.7-flash@q4_1",
+      "model": "unsloth/glm-4.7-flash",
+      "contextLength": 32768,
       "temperature": 0.1,
       "extraBody": {
         "think": false

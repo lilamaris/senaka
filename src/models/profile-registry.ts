@@ -101,6 +101,7 @@ export function resolveModelCandidateById(registry: ModelRegistry, modelId: stri
     baseUrl: endpoint.baseUrl,
     apiKey: endpoint.apiKey,
     model: resolveModelName(model),
+    contextLength: model.contextLength,
     temperature: model.temperature,
     maxTokens: model.maxTokens,
     extraBody: model.extraBody,
