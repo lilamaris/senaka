@@ -9,6 +9,7 @@ interface Args {
   sessionId: string;
   goal: string;
   agentId: string;
+  groupId?: string;
   mode?: AgentMode;
   maxSteps?: number;
   stream?: boolean;
@@ -18,6 +19,7 @@ function parseArgs(argv: string[]): Args {
   const sessionIdx = argv.indexOf("--session");
   const goalIdx = argv.indexOf("--goal");
   const agentIdx = argv.indexOf("--agent");
+  const groupIdx = argv.indexOf("--group");
   const modeIdx = argv.indexOf("--mode");
   const maxIdx = argv.indexOf("--max-steps");
   const noStream = argv.includes("--no-stream");
@@ -25,6 +27,7 @@ function parseArgs(argv: string[]): Args {
   const sessionId = sessionIdx >= 0 && argv[sessionIdx + 1] ? argv[sessionIdx + 1] : "default";
   const goal = goalIdx >= 0 && argv[goalIdx + 1] ? argv[goalIdx + 1] : "";
   const agentId = agentIdx >= 0 && argv[agentIdx + 1] ? argv[agentIdx + 1] : "default";
+  const groupId = groupIdx >= 0 && argv[groupIdx + 1] ? argv[groupIdx + 1] : undefined;
 
   if (!goal.trim()) {
     throw new Error("--goal is required");
@@ -36,7 +39,7 @@ function parseArgs(argv: string[]): Args {
   const maxRaw = maxIdx >= 0 && argv[maxIdx + 1] ? argv[maxIdx + 1] : undefined;
   const maxSteps = maxRaw && Number.isFinite(Number(maxRaw)) ? Math.max(1, Number(maxRaw)) : undefined;
 
-  return { sessionId, goal, agentId, mode, maxSteps, stream: noStream ? false : undefined };
+  return { sessionId, goal, agentId, groupId, mode, maxSteps, stream: noStream ? false : undefined };
 }
 
 async function main(): Promise<void> {
@@ -46,12 +49,14 @@ async function main(): Promise<void> {
   const rl = createInterface({ input, output });
 
   process.stdout.write(`agent profile: ${args.agentId}\n`);
+  process.stdout.write(`workspace group: ${args.groupId ?? session.id}\n`);
   process.stdout.write(`session: ${session.id}\n`);
   try {
     const result = await runAgentLoop(config, session, args.goal, args.agentId, {
       mode: args.mode,
       maxSteps: args.maxSteps,
       stream: args.stream,
+      workspaceGroupId: args.groupId,
       askUser: async (question) => {
         process.stdout.write(`ask> ${question}\n`);
         return (await rl.question("answer(YES/NO)> ")).trim();

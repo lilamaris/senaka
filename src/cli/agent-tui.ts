@@ -15,6 +15,7 @@ interface StreamView {
 interface TuiState {
   sessionId: string;
   agentId: string;
+  groupId?: string;
   modeOverride?: AgentMode;
   maxStepsOverride?: number;
   streamOverride?: boolean;
@@ -24,6 +25,9 @@ interface TuiState {
   workerView: StreamView;
   mainView: StreamView;
 }
+
+const ANSI_GRAY = "\x1b[90m";
+const ANSI_RESET = "\x1b[0m";
 
 function now(): string {
   return new Date().toISOString().slice(11, 19);
@@ -96,7 +100,7 @@ function separator(char: string, width: number): string {
   return char.repeat(Math.max(40, width));
 }
 
-function renderStreamSection(title: string, view: StreamView, width: number): string[] {
+function renderStreamSection(title: string, view: StreamView, width: number, grayThink = false): string[] {
   const out: string[] = [`[${title}]`];
   const bodyWidth = Math.max(40, width - 4);
 
@@ -107,7 +111,8 @@ function renderStreamSection(title: string, view: StreamView, width: number): st
 
   if (view.think.trim().length > 0 || view.raw.includes("<think>")) {
     out.push("THINK PHASE:");
-    out.push(...wrapParagraphs(view.think || "(thinking...)", bodyWidth));
+    const thinkLines = wrapParagraphs(view.think || "(thinking...)", bodyWidth);
+    out.push(...(grayThink ? thinkLines.map((line) => `${ANSI_GRAY}${line}${ANSI_RESET}`) : thinkLines));
     out.push("");
     out.push("FINAL RESPONSE:");
     out.push(...wrapParagraphs(view.final || "(waiting final response)", bodyWidth));
@@ -127,7 +132,7 @@ function render(state: TuiState): void {
   output.write("\x1b[2J\x1b[H");
   output.write("Senaka Agent TUI\n");
   output.write(
-    `session=${state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}\n`,
+    `session=${state.sessionId} group=${state.groupId ?? state.sessionId} agent=${state.agentId} modeOverride=${state.modeOverride ?? "<agent>"} maxStepsOverride=${state.maxStepsOverride ?? "<agent>"} streamOverride=${state.streamOverride === undefined ? "<agent>" : state.streamOverride} busy=${state.busy} turn=${state.turn}\n`,
   );
   output.write(topSep + "\n");
 
@@ -141,12 +146,14 @@ function render(state: TuiState): void {
   }
 
   output.write(midSep + "\n");
-  for (const line of renderStreamSection("MAIN STREAM", state.mainView, width)) {
+  for (const line of renderStreamSection("MAIN STREAM", state.mainView, width, true)) {
     output.write(line + "\n");
   }
 
   output.write(topSep + "\n");
-  output.write("Commands: /agent ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit\n");
+  output.write(
+    "Commands: /agent ID, /group ID, /mode main-worker|single-main|auto, /steps N|auto, /stream on|off|auto, /session ID, /clear, /exit\n",
+  );
   output.write("Type any goal and press Enter to run a turn.\n\n");
 }
 
@@ -164,7 +171,10 @@ function onEvent(state: TuiState, event: AgentLoopEvent): void {
   } else if (event.type === "tool-start") {
     pushLine(state, `tool start(${event.step}): ${event.cmd}`);
   } else if (event.type === "tool-result") {
-    pushLine(state, `tool result(${event.step}): exit=${event.exitCode}`);
+    pushLine(
+      state,
+      `tool result(${event.step}): exit=${event.exitCode}, runner=${event.runner}, group=${event.workspaceGroupId}`,
+    );
     if (event.stdout.trim()) {
       pushLine(state, `tool stdout(${event.step}): ${event.stdout.split("\n")[0]}`);
     }
@@ -194,6 +204,7 @@ async function main(): Promise<void> {
   const state: TuiState = {
     sessionId: "default",
     agentId: "default",
+    groupId: undefined,
     modeOverride: undefined,
     maxStepsOverride: undefined,
     streamOverride: undefined,
@@ -233,6 +244,15 @@ async function main(): Promise<void> {
       if (value) {
         state.agentId = value;
         pushLine(state, `agent set to ${state.agentId}`);
+      }
+      continue;
+    }
+
+    if (line.startsWith("/group ")) {
+      const value = line.slice(7).trim();
+      if (value) {
+        state.groupId = value;
+        pushLine(state, `group set to ${state.groupId}`);
       }
       continue;
     }
@@ -303,6 +323,7 @@ async function main(): Promise<void> {
         mode: state.modeOverride,
         maxSteps: state.maxStepsOverride,
         stream: state.streamOverride,
+        workspaceGroupId: state.groupId,
         onEvent: (event) => onEvent(state, event),
         askUser: async (question) => {
           pushLine(state, `ASK REQUIRED: ${question}`);

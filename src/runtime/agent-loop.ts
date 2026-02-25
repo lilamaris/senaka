@@ -1,6 +1,4 @@
-import { exec } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
 import type { ChatMessage, ChatSession } from "../types/chat.js";
 import type { AppConfig } from "../config/env.js";
 import type { AgentMode, AgentRunOverride } from "../types/model.js";
@@ -8,8 +6,7 @@ import { routeAgentModels } from "../models/role-router.js";
 import { loadModelRegistry } from "../models/profile-registry.js";
 import { createChatCompletionByCandidate, streamChatCompletionByCandidate } from "../llm/openai-compatible.js";
 import { saveSession } from "./session-store.js";
-
-const execAsync = promisify(exec);
+import { runInSandbox } from "./sandbox-executor.js";
 const WORKER_SYSTEM_PROMPT_PATH = "data/worker/SYSTEM.md";
 
 interface WorkerToolCall {
@@ -41,6 +38,8 @@ interface ToolResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  runner: "local" | "docker";
+  workspaceGroupId: string;
 }
 
 interface MainDecision {
@@ -57,7 +56,15 @@ export type AgentLoopEvent =
   | { type: "worker-token"; step: number; token: string }
   | { type: "worker-action"; step: number; action: WorkerAction["action"]; detail: string }
   | { type: "tool-start"; step: number; cmd: string }
-  | { type: "tool-result"; step: number; exitCode: number; stdout: string; stderr: string }
+  | {
+      type: "tool-result";
+      step: number;
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      runner: "local" | "docker";
+      workspaceGroupId: string;
+    }
   | { type: "ask"; step: number; question: string }
   | { type: "ask-answer"; step: number; answer: string }
   | { type: "main-start"; evidenceCount: number }
@@ -68,6 +75,7 @@ export type AgentLoopEvent =
 export interface AgentLoopOptions extends AgentRunOverride {
   onEvent?: (event: AgentLoopEvent) => void;
   askUser?: (question: string) => Promise<string>;
+  workspaceGroupId?: string;
 }
 
 export interface AgentRunResult {
@@ -91,18 +99,10 @@ function extractJsonObject(input: string): string {
   return input.slice(start, end + 1);
 }
 
-function normalizeText(value: string, maxLen = 8000): string {
-  const trimmed = value.trim();
-  if (trimmed.length <= maxLen) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, maxLen)}\n...[truncated ${trimmed.length - maxLen} chars]`;
-}
-
 function summarizeToolResult(result: ToolResult): string {
   const stdoutLine = result.stdout.split("\n").find((line) => line.trim().length > 0) ?? "";
   const stderrLine = result.stderr.split("\n").find((line) => line.trim().length > 0) ?? "";
-  return `cmd=${result.cmd} exit=${result.exitCode} stdout=${stdoutLine || "<empty>"} stderr=${stderrLine || "<empty>"}`;
+  return `runner=${result.runner} group=${result.workspaceGroupId} cmd=${result.cmd} exit=${result.exitCode} stdout=${stdoutLine || "<empty>"} stderr=${stderrLine || "<empty>"}`;
 }
 
 function parseWorkerAction(raw: string): WorkerAction {
@@ -195,31 +195,21 @@ function validateCommandSafety(cmd: string): void {
   }
 }
 
-async function runShellCommand(cmd: string): Promise<ToolResult> {
+async function runShellCommand(config: AppConfig, cmd: string, workspaceGroupId: string): Promise<ToolResult> {
   validateCommandSafety(cmd);
-
-  try {
-    const { stdout, stderr } = await execAsync(cmd, {
-      timeout: 20_000,
-      maxBuffer: 1024 * 1024,
-      shell: "/bin/zsh",
-    });
-
-    return {
-      cmd,
-      exitCode: 0,
-      stdout: normalizeText(stdout, 12_000),
-      stderr: normalizeText(stderr, 12_000),
-    };
-  } catch (error) {
-    const err = error as { code?: number; stdout?: string; stderr?: string; message: string };
-    return {
-      cmd,
-      exitCode: typeof err.code === "number" ? err.code : 1,
-      stdout: normalizeText(err.stdout ?? "", 12_000),
-      stderr: normalizeText(err.stderr ?? err.message, 12_000),
-    };
-  }
+  return runInSandbox(cmd, workspaceGroupId, {
+    mode: config.toolSandboxMode,
+    timeoutMs: config.toolTimeoutMs,
+    maxBufferBytes: config.toolMaxBufferBytes,
+    shellPath: config.toolShellPath,
+    dockerImage: config.dockerSandboxImage,
+    dockerWorkspaceRoot: config.dockerWorkspaceRoot,
+    dockerContainerPrefix: config.dockerContainerPrefix,
+    dockerNetwork: config.dockerNetwork,
+    dockerMemory: config.dockerMemory,
+    dockerCpus: config.dockerCpus,
+    dockerPidsLimit: config.dockerPidsLimit,
+  });
 }
 
 async function loadWorkerSystemPrompt(): Promise<string> {
@@ -355,6 +345,7 @@ export async function runAgentLoop(
   });
 
   const workerSystemPrompt = await loadWorkerSystemPrompt();
+  const workspaceGroupId = options?.workspaceGroupId?.trim() || session.id;
   const evidence: EvidenceItem[] = [];
   let guidance = "";
   let recentUserAnswer = "";
@@ -394,7 +385,7 @@ export async function runAgentLoop(
       options?.onEvent?.({ type: "worker-action", step, action: "call_tool", detail: action.reason });
       options?.onEvent?.({ type: "tool-start", step, cmd: action.args.cmd });
 
-      const result = await runShellCommand(action.args.cmd);
+      const result = await runShellCommand(config, action.args.cmd, workspaceGroupId);
       lastTool = result;
 
       evidence.push({
@@ -419,6 +410,8 @@ export async function runAgentLoop(
         exitCode: result.exitCode,
         stdout: result.stdout,
         stderr: result.stderr,
+        runner: result.runner,
+        workspaceGroupId: result.workspaceGroupId,
       });
 
       await saveSession(config.sessionDir, session);
