@@ -12,14 +12,14 @@
     {
       "id": "main-default",
       "serverId": "lmstudio-local",
-      "model": "glm-4.7-flash@q3_k_s",
+      "model": "glm-4.7-flash@q4_1",
       "temperature": 0.2,
       "description": "Primary synthesis model"
     },
     {
       "id": "worker-fast",
       "serverId": "lmstudio-local",
-      "model": "gpt-oss-20b",
+      "model": "glm-4.7-flash@q4_1",
       "temperature": 0.1,
       "extraBody": {
         "think": false
