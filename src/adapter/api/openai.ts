@@ -4,7 +4,7 @@ import type {
   CompletionRequest,
   StreamHandler,
 } from "../../core/api/chat-completion.js";
-import type { ChatCompletionResponse } from "../../types/chat.js";
+import type { ChatCompletionResponse, ChatMessage } from "../../types/chat.js";
 import type { ResolvedModelCandidate } from "../../types/model.js";
 
 interface OpenAICompatibleChoice {
@@ -37,10 +37,29 @@ function toEndpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 }
 
+function applyThinkingBypassHack(messages: ChatMessage[], tag: string): ChatMessage[] {
+  const idx = messages.findIndex((message) => message.role === "user");
+  if (idx < 0) {
+    return messages;
+  }
+
+  const assistantPrimer: ChatMessage = {
+    role: "assistant",
+    content: tag,
+  };
+
+  return [...messages.slice(0, idx + 1), assistantPrimer, ...messages.slice(idx + 1)];
+}
+
 function toRequestBody(candidate: ResolvedModelCandidate, request: CompletionRequest, stream: boolean): Record<string, unknown> {
+  const messages =
+    request.disableThinkingHack === true
+      ? applyThinkingBypassHack(request.messages, request.thinkBypassTag?.trim() || "<think></think>")
+      : request.messages;
+
   return {
     model: candidate.model,
-    messages: request.messages,
+    messages,
     ...(stream ? { stream: true } : {}),
     temperature: request.temperature ?? candidate.temperature ?? 0.2,
     ...(request.maxTokens ?? candidate.maxTokens ? { max_tokens: request.maxTokens ?? candidate.maxTokens } : {}),

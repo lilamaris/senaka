@@ -21,6 +21,21 @@ function getNumberEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function getBooleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
 export interface AppConfig {
   openaiBaseUrl: string;
   openaiApiKey: string;
@@ -39,6 +54,8 @@ export interface AppConfig {
   dockerMemory: string;
   dockerCpus: string;
   dockerPidsLimit: number;
+  workerDisableThinkingHack: boolean;
+  workerThinkBypassTag: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -66,5 +83,7 @@ export function loadConfig(): AppConfig {
     dockerMemory: process.env.DOCKER_MEMORY?.trim() || "512m",
     dockerCpus: process.env.DOCKER_CPUS?.trim() || "1.0",
     dockerPidsLimit: Math.floor(getNumberEnv("DOCKER_PIDS_LIMIT", 256)),
+    workerDisableThinkingHack: getBooleanEnv("WORKER_DISABLE_THINKING_HACK", true),
+    workerThinkBypassTag: process.env.WORKER_THINK_BYPASS_TAG?.trim() || "<think></think>",
   };
 }

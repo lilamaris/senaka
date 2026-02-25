@@ -415,6 +415,7 @@ async function askMainForDecision(params: {
 }
 
 async function askWorkerForAction(params: {
+  config: AppConfig;
   step: number;
   routedStream: boolean;
   model: ResolvedModelCandidate;
@@ -428,8 +429,19 @@ async function askWorkerForAction(params: {
   for (let attempt = 0; attempt <= MAX_WORKER_ACTION_RETRIES; attempt += 1) {
     const reply =
       attempt === 0 && params.routedStream
-        ? await workerApi.stream({ messages }, { onToken: params.onToken })
-        : await workerApi.complete({ messages });
+        ? await workerApi.stream(
+            {
+              messages,
+              disableThinkingHack: params.config.workerDisableThinkingHack,
+              thinkBypassTag: params.config.workerThinkBypassTag,
+            },
+            { onToken: params.onToken },
+          )
+        : await workerApi.complete({
+            messages,
+            disableThinkingHack: params.config.workerDisableThinkingHack,
+            thinkBypassTag: params.config.workerThinkBypassTag,
+          });
 
     try {
       return parseWorkerAction(reply.content);
@@ -557,6 +569,7 @@ export async function runAgentLoop(
     });
 
     const action = await askWorkerForAction({
+      config,
       step,
       routedStream: routed.stream,
       model: routed.worker,
