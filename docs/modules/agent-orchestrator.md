@@ -59,6 +59,7 @@
   - `call_tool` 시 shell 명령 실행 결과(stdout/stderr/exit code)를 worker에 재주입
   - `ask` 시 사용자 YES/NO 응답을 받아 동일 세션에서 증거 수집 계속 진행
   - `finalize` 시 main 모델이 증거 + planning 문맥으로 충분성 판단 후 `finalize/continue` 결정
+  - `AssessSufficiency`에서 `forced_synthesis_enable_think` 정책을 내려 `ForcedSynthesis` 단계의 think 활성 여부를 제어 가능
   - main finalize 응답이 JSON 형태면 plain text 최종 답변으로 재작성
   - OpenAI compatible SSE 스트리밍 토큰 이벤트(worker/main) 발행
 - 세션 로그에 worker tool/guidance 및 ask 질의/응답을 메시지로 저장

@@ -203,17 +203,22 @@ export async function askMainForDecision(params: {
   evidenceSummary: string[];
   onToken?: (token: string) => void;
   forceFinalize: boolean;
+  enableThinkOverride?: boolean;
   mainModel: ResolvedModelCandidate;
 }): Promise<MainDecision> {
   const baseMessages = buildMainDecisionMessages(params.goal, params.evidenceSummary, params.forceFinalize);
   const mainApi = resolveChatCompletionApi(params.mainModel);
+  const disableThinkingHack =
+    typeof params.enableThinkOverride === "boolean"
+      ? !params.enableThinkOverride
+      : params.config.mainDecisionDisableThinkingHack;
   return requestStructuredWithRepair({
     api: mainApi,
     baseMessages,
     retryLimit: MAIN_DECISION_RETRY_LIMIT,
     streamOnFirstAttempt: params.allowStreaming,
     requestForAttempt: (_messages, _attempt) => ({
-      disableThinkingHack: params.config.mainDecisionDisableThinkingHack,
+      disableThinkingHack,
       thinkBypassTag: params.config.mainDecisionThinkBypassTag,
       ...MAIN_DECISION_SAMPLING,
       debugEnabled: params.config.debugLlmRequests,
@@ -289,6 +294,7 @@ export async function askMainForFinalAnswer(params: {
   draft?: string;
   allowStreaming: boolean;
   onToken?: (token: string) => void;
+  enableThinkOverride?: boolean;
   mainModel: ResolvedModelCandidate;
 }): Promise<string> {
   const planningContext = summarizePlanningContext(params.planning);
@@ -301,6 +307,8 @@ export async function askMainForFinalAnswer(params: {
     params.draft,
   );
   let messages = baseMessages;
+  const disableThinkingHack =
+    typeof params.enableThinkOverride === "boolean" ? !params.enableThinkOverride : undefined;
 
   for (let attempt = 0; attempt <= MAIN_FINAL_ANSWER_RETRY_LIMIT; attempt += 1) {
     const content = await requestChatReply({
@@ -310,6 +318,12 @@ export async function askMainForFinalAnswer(params: {
       streamOnFirstAttempt: params.allowStreaming,
       request: {
         ...MAIN_FINAL_REPORT_SAMPLING,
+        ...(typeof disableThinkingHack === "boolean"
+          ? {
+              disableThinkingHack,
+              thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+            }
+          : {}),
         debugEnabled: params.config.debugLlmRequests,
         debugTag: `main-final-answer-attempt-${attempt}`,
       },

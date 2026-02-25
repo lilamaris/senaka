@@ -54,6 +54,7 @@ export interface MainDecision {
   guidance?: string;
   summary_evidence?: string[];
   needed_evidence?: string[];
+  forced_synthesis_enable_think?: boolean;
 }
 
 export interface PlanningResult {

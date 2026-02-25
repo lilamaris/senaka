@@ -67,6 +67,7 @@ const COMPACTION_MARKER = "[SESSION_COMPACTION]";
  */
 interface LoopRuntime {
   planning?: PlanningResult;
+  forcedSynthesisEnableThink?: boolean;
   evidence: EvidenceItem[];
   guidance: string;
   recentUserAnswer: string;
@@ -627,6 +628,9 @@ async function handleMainDecisionTurn(deps: LoopDependencies, runtime: LoopRunti
     decision: decision.decision,
     guidance: decision.guidance,
   });
+  if (typeof decision.forced_synthesis_enable_think === "boolean") {
+    runtime.forcedSynthesisEnableThink = decision.forced_synthesis_enable_think;
+  }
 
   if (decision.decision === "continue") {
     // guidance가 비어 있는 모델 응답도 발생할 수 있어 최소 기본 문구를 강제한다.
@@ -663,6 +667,7 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
       evidenceSummary,
       onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
       forceFinalize: true,
+      enableThinkOverride: runtime.forcedSynthesisEnableThink,
       mainModel: deps.routed.main,
     });
     runtime.finalAnswer = await askMainForFinalAnswer({
@@ -674,6 +679,7 @@ async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRunt
       draft: decision.answer?.trim(),
       allowStreaming: deps.routed.stream,
       onToken: (token) => deps.options?.onEvent?.({ type: "main-token", token }),
+      enableThinkOverride: runtime.forcedSynthesisEnableThink,
       mainModel: deps.routed.main,
     });
     deps.options?.onEvent?.({ type: "main-decision", decision: "finalize" });

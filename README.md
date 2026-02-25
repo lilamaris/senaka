@@ -119,6 +119,10 @@ Worker 프로토콜:
   - `call_tool`: shell 명령 실행 후 stdout/stderr를 worker 문맥으로 재주입
   - `ask`: YES/NO 질문으로 사용자에게 확인 후 같은 evidence 세션 계속 진행
   - `finalize`: main 모델에 의미 있는 증거 요약 전달 후 finalize/continue 결정
+- main decision 출력(요약):
+  - `decision`: `finalize | continue`
+  - `guidance`/`needed_evidence`/`answer`
+  - `forced_synthesis_enable_think`(optional): 이후 `ForcedSynthesis` 단계에서 main think 활성 여부 제어
 
 상태 머신(일반 명칭):
 - `PlanIntent`: 요청 성격을 분석해 다음 단계를 `AcquireEvidence`/`AssessSufficiency`/즉시 최종보고로 결정

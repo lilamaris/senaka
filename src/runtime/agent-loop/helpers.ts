@@ -74,6 +74,8 @@ export function parseMainDecision(raw: string): MainDecision {
   const neededEvidence = Array.isArray(parsed.needed_evidence)
     ? parsed.needed_evidence.filter((v): v is string => typeof v === "string")
     : undefined;
+  const forcedSynthesisEnableThink =
+    typeof parsed.forced_synthesis_enable_think === "boolean" ? parsed.forced_synthesis_enable_think : undefined;
 
   return {
     decision,
@@ -81,6 +83,7 @@ export function parseMainDecision(raw: string): MainDecision {
     guidance,
     summary_evidence: summaryEvidence,
     needed_evidence: neededEvidence,
+    forced_synthesis_enable_think: forcedSynthesisEnableThink,
   };
 }
 
@@ -250,6 +253,9 @@ export function summarizeDecisionContext(decision: MainDecision): string {
   if (decision.needed_evidence && decision.needed_evidence.length > 0) {
     parts.push(`decision_needed_evidence: ${decision.needed_evidence.map((v, i) => `${i + 1}. ${v}`).join(" | ")}`);
   }
+  if (typeof decision.forced_synthesis_enable_think === "boolean") {
+    parts.push(`decision_forced_synthesis_enable_think: ${decision.forced_synthesis_enable_think}`);
+  }
   return parts.join("\n");
 }
 
@@ -376,8 +382,11 @@ export function buildMainDecisionMessages(goal: string, evidenceSummary: string[
         "You are the main reviewer for an agent loop.",
         "Output EXACTLY one JSON object.",
         "Use only one of these shapes:",
-        "{\"decision\":\"finalize\",\"answer\":\"...\",\"summary_evidence\":[\"...\"]}",
-        "{\"decision\":\"continue\",\"guidance\":\"...\",\"needed_evidence\":[\"...\"]}",
+        "{\"decision\":\"finalize\",\"answer\":\"...\",\"summary_evidence\":[\"...\"],\"forced_synthesis_enable_think\":true|false}",
+        "{\"decision\":\"continue\",\"guidance\":\"...\",\"needed_evidence\":[\"...\"],\"forced_synthesis_enable_think\":true|false}",
+        "forced_synthesis_enable_think is optional but recommended.",
+        "If true, ForcedSynthesis stage may enable model thinking.",
+        "If false, ForcedSynthesis stage may suppress model thinking.",
         "If evidence is insufficient, choose continue with concrete guidance.",
         forceFinalize ? "You MUST choose finalize in this call." : "",
       ].join("\n"),
