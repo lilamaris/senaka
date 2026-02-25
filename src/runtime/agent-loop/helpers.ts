@@ -278,22 +278,6 @@ export function validateWorkerReplyTokenLimit(raw: string, maxTokens: number): v
   }
 }
 
-export function validateCommandSafety(cmd: string, maxPipes: number): void {
-  const lowered = cmd.toLowerCase();
-  const denied = [" rm ", "delete", " drop ", "wipe", "shutdown", "reboot", "mkfs", " dd ", " kill ", "pkill", "git push"];
-
-  for (const keyword of denied) {
-    if (lowered.includes(keyword.trim())) {
-      throw new Error(`unsafe command blocked: ${keyword.trim()}`);
-    }
-  }
-
-  const pipeCount = (cmd.match(/\|/g) ?? []).length;
-  if (pipeCount > maxPipes) {
-    throw new Error(`worker command can include at most ${maxPipes} pipe(s)`);
-  }
-}
-
 export function buildWorkerMessages(params: {
   workerSystemPrompt: string;
   goal: string;

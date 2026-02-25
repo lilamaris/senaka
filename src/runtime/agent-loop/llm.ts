@@ -16,9 +16,9 @@ import {
   stripThinkBlocks,
   summarizePlanningContext,
   tryExtractAnswerField,
-  validateCommandSafety,
   validateWorkerReplyTokenLimit,
 } from "./helpers.js";
+import { validateCommandSafety } from "./command-safety.js";
 import type { MainDecision, PlanningResult, ToolResult, WorkerAction } from "./types.js";
 import type { ChatMessage } from "../../types/chat.js";
 import type { ResolvedModelCandidate } from "../../types/model.js";

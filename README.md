@@ -123,6 +123,10 @@ Worker 프로토콜:
   - `decision`: `finalize | continue`
   - `guidance`/`needed_evidence`/`answer`
   - `forced_synthesis_enable_think`(optional): 이후 `ForcedSynthesis` 단계에서 main think 활성 여부 제어
+- 명령 안전성 정책:
+  - 명령 문자열은 토큰/세그먼트 단위로 파싱해 검증
+  - 금지 실행 파일(`rm`, `dd`, `mkfs`, `shutdown`, `reboot`, `kill` 등)과 `git push` 차단
+  - `TOOL_MAX_PIPES` 초과 파이프라인 차단
 
 상태 머신(일반 명칭):
 - `PlanIntent`: 요청 성격을 분석해 다음 단계를 `AcquireEvidence`/`AssessSufficiency`/즉시 최종보고로 결정
