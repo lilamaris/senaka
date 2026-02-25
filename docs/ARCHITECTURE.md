@@ -74,6 +74,7 @@
 ## CLI / WebUI 사용 개요
 - CLI
   - 현재 구현: `npm run chat -- --session <id>`, `npm run chat:turn -- --session <id> --message "..."`
+  - 현재 구현: chat 경로는 `MODEL_PROFILES_PATH` + (`CHAT_MODEL_ID` 또는 `CHAT_AGENT_ID`) 기준으로 main 모델을 선택
   - 현재 구현: `npm run models:list`, `npm run agent:run -- --agent <id> --goal "<목표>"`
   - 현재 구현: `npm run agent:tui` (로그/입력 기반 TUI)
   - 현재 구현: planning 이벤트(`planning-start`, `planning-result`)와 context compaction 이벤트를 실시간 출력

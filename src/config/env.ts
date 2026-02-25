@@ -2,16 +2,6 @@ import { config as loadDotenv } from "dotenv";
 
 loadDotenv();
 
-const required = ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL"] as const;
-
-function getEnv(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback;
-  if (!value || !value.trim()) {
-    throw new Error(`Missing required env var: ${name}`);
-  }
-  return value;
-}
-
 function getNumberEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw || !raw.trim()) {
@@ -37,12 +27,14 @@ function getBooleanEnv(name: string, fallback: boolean): boolean {
 }
 
 export interface AppConfig {
-  openaiBaseUrl: string;
-  openaiApiKey: string;
-  openaiModel: string;
+  openaiBaseUrl?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
   systemPrompt?: string;
   sessionDir: string;
   modelProfilesPath: string;
+  chatAgentId: string;
+  chatModelId?: string;
   toolSandboxMode: "local" | "docker";
   toolShellPath: string;
   dockerShellPath: string;
@@ -66,19 +58,15 @@ export interface AppConfig {
 }
 
 export function loadConfig(): AppConfig {
-  for (const key of required) {
-    if (!process.env[key] || !String(process.env[key]).trim()) {
-      throw new Error(`Missing required env var: ${key}`);
-    }
-  }
-
   return {
-    openaiBaseUrl: getEnv("OPENAI_BASE_URL"),
-    openaiApiKey: getEnv("OPENAI_API_KEY"),
-    openaiModel: getEnv("OPENAI_MODEL"),
+    openaiBaseUrl: process.env.OPENAI_BASE_URL?.trim() || undefined,
+    openaiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
+    openaiModel: process.env.OPENAI_MODEL?.trim() || undefined,
     systemPrompt: process.env.SYSTEM_PROMPT?.trim() || undefined,
     sessionDir: process.env.SESSION_DIR?.trim() || "./data/sessions",
     modelProfilesPath: process.env.MODEL_PROFILES_PATH?.trim() || "./config/model-profiles.json",
+    chatAgentId: process.env.CHAT_AGENT_ID?.trim() || "default",
+    chatModelId: process.env.CHAT_MODEL_ID?.trim() || undefined,
     toolSandboxMode: process.env.TOOL_SANDBOX_MODE === "docker" ? "docker" : "local",
     toolShellPath: process.env.TOOL_SHELL_PATH?.trim() || "/bin/zsh",
     dockerShellPath: process.env.DOCKER_SHELL_PATH?.trim() || "/bin/sh",

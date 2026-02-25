@@ -55,15 +55,18 @@
 4. 해당 기능의 `docs/modules/*.md`에서 관련 TODO 링크 확인
 5. `docs/todo/TODO-*.md`의 작업 항목 기준으로 구현 진행
 
-### 2) OpenAI 호환 provider로 chat turn 실행
+### 2) 모델 프로파일 기반 chat turn 실행
 필수 환경변수(.env):
-- `OPENAI_BASE_URL`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
+- `MODEL_PROFILES_PATH` (기본값: `./config/model-profiles.json`)
+- `MODEL_PROFILES_PATH`가 참조하는 서버 env
+  - 기본 샘플 프로파일(`config/model-profiles.json`) 기준: `OPENAI_BASE_URL`, `OPENAI_API_KEY`
 
 선택 환경변수:
 - `SYSTEM_PROMPT`
 - `SESSION_DIR` (기본값: `./data/sessions`)
+- `CHAT_AGENT_ID` (기본값: `default`, `chat/chat-turn`에서 main 모델 선택용)
+- `CHAT_MODEL_ID` (지정 시 `CHAT_AGENT_ID`보다 우선)
+- `OPENAI_MODEL` (레거시 `src/llm/openai-compatible.ts` 경로 사용 시)
 - `WORKER_OPENAI_MODEL` (worker 후보 모델명)
 - `MODEL_PROFILES_PATH` (기본값: `./config/model-profiles.json`)
 - `TOOL_SANDBOX_MODE` (`local`/`docker`, 기본값 `local`)
@@ -99,6 +102,7 @@ npm run chat:turn -- --session default --message "안녕하세요"
 참고:
 - 현재는 `/chat/completions` 단일 경로를 사용합니다.
 - 인터랙티브 CLI에서 `/show`, `/reset`, `/exit` 명령을 지원합니다.
+- `chat/chat-turn`은 모델 프로파일에서 선택된 main 후보로 실행됩니다(`CHAT_MODEL_ID` 또는 `CHAT_AGENT_ID` 기준).
 
 ### 2.5) Agent loop(main/worker 분리) 실행
 실행 예시:

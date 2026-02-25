@@ -36,9 +36,10 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
 ## 모듈 간 흐름
 1. CLI에서 session id와 입력을 수신
 2. `session-store`가 기존 히스토리를 복구
-3. `chat-service`가 user 턴을 저장
-4. provider가 `/chat/completions` 호출
-5. assistant 응답을 세션에 저장
+3. `chat-service`가 `CHAT_MODEL_ID` 또는 `CHAT_AGENT_ID` 기준으로 main 모델 후보를 해석
+4. `chat-service`가 user 턴을 저장
+5. provider가 `/chat/completions` 호출
+6. assistant 응답을 세션에 저장
 
 ## 확장 포인트
 - 핵심 기능은 `src/core/api/chat-completion.ts` 인터페이스에만 의존
@@ -47,9 +48,12 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
 
 ## 사용 방법
 - 환경변수
-  - `OPENAI_API_KEY`
-  - `OPENAI_BASE_URL` (예: `http://127.0.0.1:1234/v1`)
-  - `OPENAI_MODEL` (LM Studio에서 로드된 모델명)
+  - `MODEL_PROFILES_PATH` (default: `./config/model-profiles.json`)
+  - `CHAT_AGENT_ID` (default: `default`)
+  - `CHAT_MODEL_ID` (optional, 지정 시 `CHAT_AGENT_ID`보다 우선)
+  - 모델 프로파일이 참조하는 서버 env
+    - 기본 샘플 기준: `OPENAI_BASE_URL`, `OPENAI_API_KEY`
+  - `OPENAI_MODEL` (legacy helper 경로 사용 시만 필요)
   - `SYSTEM_PROMPT` (optional)
   - `SESSION_DIR` (optional, default: `./data/sessions`)
 - 실행

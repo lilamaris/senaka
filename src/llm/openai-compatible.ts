@@ -8,6 +8,11 @@ export interface StreamHandlers {
 }
 
 function defaultCandidate(config: AppConfig): ResolvedModelCandidate {
+  if (!config.openaiBaseUrl || !config.openaiApiKey || !config.openaiModel) {
+    throw new Error(
+      "OPENAI_BASE_URL/OPENAI_API_KEY/OPENAI_MODEL are required for legacy openai-compatible helper usage",
+    );
+  }
   return {
     id: "default",
     provider: "openai-compatible",
