@@ -10,8 +10,14 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
 ## 모듈 구성
 - `src/config/env.ts`
   - `.env` 기반 설정 로더
+- `src/core/api/chat-completion.ts`
+  - 런타임이 의존하는 고정 API 포트(ChatCompletionApi/Adapter)
+- `src/adapter/api/index.ts`
+  - provider별 구현체 선택 팩토리
+- `src/adapter/api/openai.ts`
+  - OpenAI/OpenAI-compatible 구현체
 - `src/llm/openai-compatible.ts`
-  - OpenAI 호환 API 어댑터
+  - 기존 호출 경로 호환 래퍼
 - `config/model-profiles.json`
   - API 서버/모델/에이전트(main-worker/single-main) 설정 관리
 - `src/models/profile-registry.ts`
@@ -33,6 +39,11 @@ OpenAI API 스펙(`/chat/completions`) 기반으로 LM Studio(OpenAI 호환 포�
 3. `chat-service`가 user 턴을 저장
 4. provider가 `/chat/completions` 호출
 5. assistant 응답을 세션에 저장
+
+## 확장 포인트
+- 핵심 기능은 `src/core/api/chat-completion.ts` 인터페이스에만 의존
+- 신규 provider(LM Studio/OpenAI/Claude Code)는 `src/adapter/api/*` 구현체 추가로 확장
+- 런타임(`chat-service`, `agent-loop`)은 adapter 팩토리로 구현체를 주입받아 사용
 
 ## 사용 방법
 - 환경변수
