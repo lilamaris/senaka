@@ -1,6 +1,6 @@
 import type { ChatMessage } from "./chat.js";
 
-export type ProviderType = "openai-compatible";
+export type ProviderType = "openai-compatible" | "openai" | "claude-code";
 export type AgentMode = "main-worker" | "single-main";
 
 export interface ApiServer {

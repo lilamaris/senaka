@@ -1,12 +1,12 @@
 import { readFile } from "node:fs/promises";
 import type { ChatMessage, ChatSession } from "../types/chat.js";
 import type { AppConfig } from "../config/env.js";
-import type { AgentMode, AgentRunOverride } from "../types/model.js";
+import type { AgentMode, AgentRunOverride, ResolvedModelCandidate } from "../types/model.js";
 import { routeAgentModels } from "../models/role-router.js";
 import { loadModelRegistry } from "../models/profile-registry.js";
-import { createChatCompletionByCandidate, streamChatCompletionByCandidate } from "../llm/openai-compatible.js";
 import { saveSession } from "./session-store.js";
 import { runInSandbox } from "./sandbox-executor.js";
+import { resolveChatCompletionApi } from "../adapter/api/index.js";
 const WORKER_SYSTEM_PROMPT_PATH = "data/worker/SYSTEM.md";
 
 interface WorkerToolCall {
@@ -320,12 +320,13 @@ async function askMainForDecision(params: {
   evidenceSummary: string[];
   onToken?: (token: string) => void;
   forceFinalize: boolean;
-  mainModel: Parameters<typeof createChatCompletionByCandidate>[0];
+  mainModel: ResolvedModelCandidate;
 }): Promise<MainDecision> {
   const messages = buildMainDecisionMessages(params.goal, params.evidenceSummary, params.forceFinalize);
+  const mainApi = resolveChatCompletionApi(params.mainModel);
   const reply = params.routedStream
-    ? await streamChatCompletionByCandidate(params.mainModel, messages, { onToken: params.onToken })
-    : await createChatCompletionByCandidate(params.mainModel, messages);
+    ? await mainApi.stream({ messages }, { onToken: params.onToken })
+    : await mainApi.complete({ messages });
 
   return parseMainDecision(reply.content);
 }
@@ -373,11 +374,12 @@ export async function runAgentLoop(
       recentUserAnswer,
     });
 
+    const workerApi = resolveChatCompletionApi(routed.worker);
     const workerReply = routed.stream
-      ? await streamChatCompletionByCandidate(routed.worker, workerMessages, {
+      ? await workerApi.stream({ messages: workerMessages }, {
           onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
         })
-      : await createChatCompletionByCandidate(routed.worker, workerMessages);
+      : await workerApi.complete({ messages: workerMessages });
 
     const action = parseWorkerAction(workerReply.content);
 
