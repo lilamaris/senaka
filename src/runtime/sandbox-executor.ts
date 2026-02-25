@@ -11,6 +11,7 @@ export interface SandboxExecutorOptions {
   timeoutMs: number;
   maxBufferBytes: number;
   shellPath: string;
+  dockerShellPath: string;
   dockerImage: string;
   dockerWorkspaceRoot: string;
   dockerContainerPrefix: string;
@@ -165,7 +166,7 @@ export async function runInSandbox(
     const workspace = await ensureDockerWorkspace(options, rawGroupId);
     const { stdout, stderr } = await execFileAsync(
       "docker",
-      ["exec", "-i", "-w", "/workspace", workspace.containerName, options.shellPath, "-lc", cmd],
+      ["exec", "-i", "-w", "/workspace", workspace.containerName, options.dockerShellPath, "-lc", cmd],
       {
         timeout: options.timeoutMs,
         maxBuffer: options.maxBufferBytes,

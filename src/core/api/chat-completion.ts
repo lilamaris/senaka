@@ -4,6 +4,8 @@ import type { ModelLoadOption } from "../model/type.js";
 
 export interface CompletionRequest extends ModelLoadOption {
   messages: ChatMessage[];
+  debugEnabled?: boolean;
+  debugTag?: string;
 }
 
 export interface StreamHandler {

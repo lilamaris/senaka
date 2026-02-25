@@ -40,5 +40,6 @@
 
 ## 운영 메모
 - 그룹별 상태는 `DOCKER_WORKSPACE_ROOT/<group_id>`에 유지
+- 컨테이너 내부 기본 쉘은 `DOCKER_SHELL_PATH`(기본 `/bin/sh`) 사용
 - 미사용 그룹 컨테이너는 stop 가능, 워크스페이스는 유지
 - 프로덕션에서는 컨테이너 TTL 정리 작업(cron/worker) 추가 권장

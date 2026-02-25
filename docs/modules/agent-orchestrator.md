@@ -35,7 +35,11 @@
 - `src/runtime/agent-loop.ts`
   - worker 액션 루프(`call_tool`, `ask`, `finalize`) 기반 증거 수집
   - worker/main JSON 출력 스키마 검증 + 자동 재시도(repair prompt)
+  - worker 응답 길이(최대 토큰 추정) 검증 + 초과 시 재생성
+  - worker 검증 재시도 한도 초과 시 루프 종료 대신 main 최종화 단계로 폴백
   - worker completion 요청 시 think bypass primer(`<think></think>`) 옵션 지원
+  - `DEBUG_LLM_REQUESTS=true` 시 worker/main 요청 payload 요약과 think bypass 주입 여부 로그 출력
+  - main 결정 단계에서도 think bypass 옵션 지원, 결정/최종응답 실패 시 폴백 응답 보장
   - `call_tool` 시 shell 명령 실행 결과(stdout/stderr/exit code)를 worker에 재주입
   - `ask` 시 사용자 YES/NO 응답을 받아 동일 세션에서 증거 수집 계속 진행
   - `finalize` 시 main 모델이 증거 요약으로 충분성 판단 후 `finalize/continue` 결정

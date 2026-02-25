@@ -8,7 +8,6 @@ import { saveSession } from "./session-store.js";
 import { runInSandbox } from "./sandbox-executor.js";
 import { resolveChatCompletionApi } from "../adapter/api/index.js";
 const WORKER_SYSTEM_PROMPT_PATH = "data/worker/SYSTEM.md";
-const MAX_WORKER_ACTION_RETRIES = 2;
 const MAX_MAIN_DECISION_RETRIES = 2;
 const MAX_FINAL_ANSWER_RETRIES = 2;
 
@@ -184,12 +183,27 @@ function parseMainDecision(raw: string): MainDecision {
 
 function buildStructuredRepairPrompt(kind: "worker-action" | "main-decision", error: string): ChatMessage {
   if (kind === "worker-action") {
+    const lengthHint = /too long|token/i.test(error)
+      ? [
+          "Your response is too long.",
+          "Shorten reason to one short sentence.",
+          "Keep command compact and avoid unnecessary pipes/flags.",
+        ]
+      : [];
+    const policyHint = /unsafe command blocked|pipe/i.test(error)
+      ? [
+          "Your command violated tool policy.",
+          "Use a safe read-only command and reduce command complexity.",
+        ]
+      : [];
     return {
       role: "user",
       content: [
         `Your previous output was invalid: ${error}`,
         "Re-output EXACTLY one valid JSON object for worker action.",
         "No code block, no explanation, no extra text.",
+        ...lengthHint,
+        ...policyHint,
       ].join("\n"),
     };
   }
@@ -242,7 +256,22 @@ function fallbackFinalAnswer(goal: string, evidenceSummary: string[]): string {
   ].join("\n");
 }
 
-function validateCommandSafety(cmd: string): void {
+function estimateTokenCount(text: string): number {
+  const compact = text.trim();
+  if (!compact) {
+    return 0;
+  }
+  return Math.ceil(compact.length / 4);
+}
+
+function validateWorkerReplyTokenLimit(raw: string, maxTokens: number): void {
+  const estimated = estimateTokenCount(raw);
+  if (estimated > maxTokens) {
+    throw new Error(`worker response too long: estimated tokens=${estimated}, limit=${maxTokens}`);
+  }
+}
+
+function validateCommandSafety(cmd: string, maxPipes: number): void {
   const lowered = cmd.toLowerCase();
   const denied = [" rm ", "delete", " drop ", "wipe", "shutdown", "reboot", "mkfs", " dd ", " kill ", "pkill", "git push"];
 
@@ -253,18 +282,19 @@ function validateCommandSafety(cmd: string): void {
   }
 
   const pipeCount = (cmd.match(/\|/g) ?? []).length;
-  if (pipeCount > 1) {
-    throw new Error("worker command can include at most one pipe");
+  if (pipeCount > maxPipes) {
+    throw new Error(`worker command can include at most ${maxPipes} pipe(s)`);
   }
 }
 
 async function runShellCommand(config: AppConfig, cmd: string, workspaceGroupId: string): Promise<ToolResult> {
-  validateCommandSafety(cmd);
+  validateCommandSafety(cmd, config.toolMaxPipes);
   return runInSandbox(cmd, workspaceGroupId, {
     mode: config.toolSandboxMode,
     timeoutMs: config.toolTimeoutMs,
     maxBufferBytes: config.toolMaxBufferBytes,
     shellPath: config.toolShellPath,
+    dockerShellPath: config.dockerShellPath,
     dockerImage: config.dockerSandboxImage,
     dockerWorkspaceRoot: config.dockerWorkspaceRoot,
     dockerContainerPrefix: config.dockerContainerPrefix,
@@ -378,6 +408,7 @@ function buildMainDecisionMessages(goal: string, evidenceSummary: string[], forc
 }
 
 async function askMainForDecision(params: {
+  config: AppConfig;
   routedStream: boolean;
   goal: string;
   evidenceSummary: string[];
@@ -392,8 +423,23 @@ async function askMainForDecision(params: {
   for (let attempt = 0; attempt <= MAX_MAIN_DECISION_RETRIES; attempt += 1) {
     const reply =
       attempt === 0 && params.routedStream
-        ? await mainApi.stream({ messages }, { onToken: params.onToken })
-        : await mainApi.complete({ messages });
+        ? await mainApi.stream(
+            {
+              messages,
+              disableThinkingHack: params.config.mainDecisionDisableThinkingHack,
+              thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+              debugEnabled: params.config.debugLlmRequests,
+              debugTag: "main-decision",
+            },
+            { onToken: params.onToken },
+          )
+        : await mainApi.complete({
+            messages,
+            disableThinkingHack: params.config.mainDecisionDisableThinkingHack,
+            thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+            debugEnabled: params.config.debugLlmRequests,
+            debugTag: "main-decision",
+          });
 
     try {
       return parseMainDecision(reply.content);
@@ -417,6 +463,7 @@ async function askMainForDecision(params: {
 async function askWorkerForAction(params: {
   config: AppConfig;
   step: number;
+  maxRetries: number;
   routedStream: boolean;
   model: ResolvedModelCandidate;
   workerMessages: ChatMessage[];
@@ -426,7 +473,7 @@ async function askWorkerForAction(params: {
   const baseMessages = params.workerMessages;
   let messages = baseMessages;
 
-  for (let attempt = 0; attempt <= MAX_WORKER_ACTION_RETRIES; attempt += 1) {
+  for (let attempt = 0; attempt <= params.maxRetries; attempt += 1) {
     const reply =
       attempt === 0 && params.routedStream
         ? await workerApi.stream(
@@ -434,6 +481,9 @@ async function askWorkerForAction(params: {
               messages,
               disableThinkingHack: params.config.workerDisableThinkingHack,
               thinkBypassTag: params.config.workerThinkBypassTag,
+              maxTokens: params.config.workerMaxResponseTokens,
+              debugEnabled: params.config.debugLlmRequests,
+              debugTag: `worker-action-step-${params.step}-attempt-${attempt}`,
             },
             { onToken: params.onToken },
           )
@@ -441,12 +491,20 @@ async function askWorkerForAction(params: {
             messages,
             disableThinkingHack: params.config.workerDisableThinkingHack,
             thinkBypassTag: params.config.workerThinkBypassTag,
+            maxTokens: params.config.workerMaxResponseTokens,
+            debugEnabled: params.config.debugLlmRequests,
+            debugTag: `worker-action-step-${params.step}-attempt-${attempt}`,
           });
 
     try {
-      return parseWorkerAction(reply.content);
+      validateWorkerReplyTokenLimit(reply.content, params.config.workerMaxResponseTokens);
+      const parsed = parseWorkerAction(reply.content);
+      if (parsed.action === "call_tool") {
+        validateCommandSafety(parsed.args.cmd, params.config.toolMaxPipes);
+      }
+      return parsed;
     } catch (error) {
-      if (attempt >= MAX_WORKER_ACTION_RETRIES) {
+      if (attempt >= params.maxRetries) {
         throw new Error(`worker action schema validation failed at step ${params.step}: ${(error as Error).message}`);
       }
 
@@ -488,6 +546,7 @@ function buildMainFinalAnswerMessages(goal: string, evidenceSummary: string[], d
 }
 
 async function askMainForFinalAnswer(params: {
+  config: AppConfig;
   goal: string;
   evidenceSummary: string[];
   draft?: string;
@@ -498,7 +557,11 @@ async function askMainForFinalAnswer(params: {
   let messages = baseMessages;
 
   for (let attempt = 0; attempt <= MAX_FINAL_ANSWER_RETRIES; attempt += 1) {
-    const reply = await mainApi.complete({ messages });
+    const reply = await mainApi.complete({
+      messages,
+      debugEnabled: params.config.debugLlmRequests,
+      debugTag: "main-final-answer",
+    });
     const direct = reply.content.trim();
     const extracted = tryExtractAnswerField(direct);
     const candidate = (extracted || direct).trim();
@@ -568,14 +631,29 @@ export async function runAgentLoop(
       recentUserAnswer,
     });
 
-    const action = await askWorkerForAction({
-      config,
-      step,
-      routedStream: routed.stream,
-      model: routed.worker,
-      workerMessages,
-      onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
-    });
+    let action: WorkerAction;
+    try {
+      action = await askWorkerForAction({
+        config,
+        step,
+        maxRetries: config.workerActionMaxRetries,
+        routedStream: routed.stream,
+        model: routed.worker,
+        workerMessages,
+        onToken: (token) => options?.onEvent?.({ type: "worker-token", step, token }),
+      });
+    } catch (error) {
+      const reason = (error as Error).message;
+      const fallbackGuidance = `Worker validation failed at step ${step}. Proceed to main finalization using collected evidence. ${reason}`;
+      options?.onEvent?.({ type: "worker-action", step, action: "finalize", detail: fallbackGuidance });
+      evidence.push({
+        kind: "main_guidance",
+        summary: fallbackGuidance,
+      });
+      session.messages.push({ role: "system", content: `[WORKER_VALIDATION_FAIL_${step}] ${reason}` });
+      await saveSession(config.sessionDir, session);
+      break;
+    }
 
     if (action.action === "call_tool") {
       options?.onEvent?.({ type: "worker-action", step, action: "call_tool", detail: action.reason });
@@ -642,28 +720,52 @@ export async function runAgentLoop(
     options?.onEvent?.({ type: "main-start", evidenceCount: evidence.length });
 
     const evidenceSummary = summarizeEvidenceForMain(evidence);
-    const decision = await askMainForDecision({
-      routedStream: routed.stream,
-      goal,
-      evidenceSummary,
-      onToken: (token) => options?.onEvent?.({ type: "main-token", token }),
-      forceFinalize: false,
-      mainModel: routed.main,
-    });
+    let decision: MainDecision;
+    try {
+      decision = await askMainForDecision({
+        config,
+        routedStream: routed.stream,
+        goal,
+        evidenceSummary,
+        onToken: (token) => options?.onEvent?.({ type: "main-token", token }),
+        forceFinalize: false,
+        mainModel: routed.main,
+      });
+    } catch (error) {
+      const reason = (error as Error).message;
+      guidance = `Main decision failed at step ${step}. Continue evidence loop with safer minimal actions. ${reason}`;
+      evidence.push({
+        kind: "main_guidance",
+        summary: guidance,
+      });
+      session.messages.push({ role: "system", content: `[MAIN_DECISION_FAIL_${step}] ${reason}` });
+      await saveSession(config.sessionDir, session);
+      options?.onEvent?.({ type: "main-decision", decision: "continue", guidance });
+      continue;
+    }
 
     options?.onEvent?.({ type: "main-decision", decision: decision.decision, guidance: decision.guidance });
 
     if (decision.decision === "finalize") {
       const draft = decision.answer?.trim();
-      finalAnswer =
-        draft && !looksLikeStructuredOutput(draft)
-          ? draft
-          : await askMainForFinalAnswer({
-              goal,
-              evidenceSummary,
-              draft,
-              mainModel: routed.main,
-            });
+      if (draft && !looksLikeStructuredOutput(draft)) {
+        finalAnswer = draft;
+      } else {
+        try {
+          finalAnswer = await askMainForFinalAnswer({
+            config,
+            goal,
+            evidenceSummary,
+            draft,
+            mainModel: routed.main,
+          });
+        } catch (error) {
+          finalAnswer = fallbackFinalAnswer(goal, evidenceSummary);
+          const reason = (error as Error).message;
+          session.messages.push({ role: "system", content: `[MAIN_FINAL_ANSWER_FAIL_${step}] ${reason}` });
+          await saveSession(config.sessionDir, session);
+        }
+      }
       break;
     }
 
@@ -680,26 +782,38 @@ export async function runAgentLoop(
   if (!finalAnswer) {
     options?.onEvent?.({ type: "main-start", evidenceCount: evidence.length });
 
-    const decision = await askMainForDecision({
-      routedStream: routed.stream,
-      goal,
-      evidenceSummary: summarizeEvidenceForMain(evidence),
-      onToken: (token) => options?.onEvent?.({ type: "main-token", token }),
-      forceFinalize: true,
-      mainModel: routed.main,
-    });
+    const finalEvidence = summarizeEvidenceForMain(evidence);
+    try {
+      const decision = await askMainForDecision({
+        config,
+        routedStream: routed.stream,
+        goal,
+        evidenceSummary: finalEvidence,
+        onToken: (token) => options?.onEvent?.({ type: "main-token", token }),
+        forceFinalize: true,
+        mainModel: routed.main,
+      });
 
-    const fallbackDraft = decision.answer?.trim();
-    finalAnswer =
-      fallbackDraft && !looksLikeStructuredOutput(fallbackDraft)
-        ? fallbackDraft
-        : await askMainForFinalAnswer({
-            goal,
-            evidenceSummary: summarizeEvidenceForMain(evidence),
-            draft: fallbackDraft,
-            mainModel: routed.main,
-          });
-    options?.onEvent?.({ type: "main-decision", decision: "finalize" });
+      const fallbackDraft = decision.answer?.trim();
+      if (fallbackDraft && !looksLikeStructuredOutput(fallbackDraft)) {
+        finalAnswer = fallbackDraft;
+      } else {
+        finalAnswer = await askMainForFinalAnswer({
+          config,
+          goal,
+          evidenceSummary: finalEvidence,
+          draft: fallbackDraft,
+          mainModel: routed.main,
+        });
+      }
+      options?.onEvent?.({ type: "main-decision", decision: "finalize" });
+    } catch (error) {
+      const reason = (error as Error).message;
+      finalAnswer = fallbackFinalAnswer(goal, finalEvidence);
+      session.messages.push({ role: "system", content: `[MAIN_FORCE_FINALIZE_FAIL] ${reason}` });
+      await saveSession(config.sessionDir, session);
+      options?.onEvent?.({ type: "main-decision", decision: "finalize", guidance: `fallback finalize: ${reason}` });
+    }
   }
 
   session.messages.push({ role: "assistant", content: finalAnswer });

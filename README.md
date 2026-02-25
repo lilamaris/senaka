@@ -67,8 +67,10 @@
 - `MODEL_PROFILES_PATH` (기본값: `./config/model-profiles.json`)
 - `TOOL_SANDBOX_MODE` (`local`/`docker`, 기본값 `local`)
 - `TOOL_SHELL_PATH` (기본값: `/bin/zsh`)
+- `DOCKER_SHELL_PATH` (기본값: `/bin/sh`)
 - `TOOL_TIMEOUT_MS` (기본값: `20000`)
 - `TOOL_MAX_BUFFER_BYTES` (기본값: `1048576`)
+- `TOOL_MAX_PIPES` (기본값: `2`, worker shell 명령의 최대 `|` 개수)
 - `DOCKER_SANDBOX_IMAGE` (기본값: `node:22-bookworm-slim`)
 - `DOCKER_WORKSPACE_ROOT` (기본값: `./data/workspaces`)
 - `DOCKER_CONTAINER_PREFIX` (기본값: `senaka-ws`)
@@ -78,6 +80,11 @@
 - `DOCKER_PIDS_LIMIT` (기본값: `256`)
 - `WORKER_DISABLE_THINKING_HACK` (기본값: `true`)
 - `WORKER_THINK_BYPASS_TAG` (기본값: `<think></think>`)
+- `WORKER_MAX_RESPONSE_TOKENS` (기본값: `256`, worker 응답 길이 제한)
+- `WORKER_ACTION_MAX_RETRIES` (기본값: `6`, worker 검증 실패 재생성 최대 횟수)
+- `DEBUG_LLM_REQUESTS` (기본값: `false`, true면 LLM 요청 payload 요약 로그 출력)
+- `MAIN_DECISION_DISABLE_THINKING_HACK` (기본값: `true`, main 결정 단계 think bypass)
+- `MAIN_DECISION_THINK_BYPASS_TAG` (기본값: `<think></think>`)
 
 실행 예시:
 ```bash

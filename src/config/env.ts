@@ -45,8 +45,10 @@ export interface AppConfig {
   modelProfilesPath: string;
   toolSandboxMode: "local" | "docker";
   toolShellPath: string;
+  dockerShellPath: string;
   toolTimeoutMs: number;
   toolMaxBufferBytes: number;
+  toolMaxPipes: number;
   dockerSandboxImage: string;
   dockerWorkspaceRoot: string;
   dockerContainerPrefix: string;
@@ -56,6 +58,11 @@ export interface AppConfig {
   dockerPidsLimit: number;
   workerDisableThinkingHack: boolean;
   workerThinkBypassTag: string;
+  workerMaxResponseTokens: number;
+  workerActionMaxRetries: number;
+  debugLlmRequests: boolean;
+  mainDecisionDisableThinkingHack: boolean;
+  mainDecisionThinkBypassTag: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -74,8 +81,10 @@ export function loadConfig(): AppConfig {
     modelProfilesPath: process.env.MODEL_PROFILES_PATH?.trim() || "./config/model-profiles.json",
     toolSandboxMode: process.env.TOOL_SANDBOX_MODE === "docker" ? "docker" : "local",
     toolShellPath: process.env.TOOL_SHELL_PATH?.trim() || "/bin/zsh",
+    dockerShellPath: process.env.DOCKER_SHELL_PATH?.trim() || "/bin/sh",
     toolTimeoutMs: getNumberEnv("TOOL_TIMEOUT_MS", 20_000),
     toolMaxBufferBytes: getNumberEnv("TOOL_MAX_BUFFER_BYTES", 1024 * 1024),
+    toolMaxPipes: Math.floor(getNumberEnv("TOOL_MAX_PIPES", 2)),
     dockerSandboxImage: process.env.DOCKER_SANDBOX_IMAGE?.trim() || "node:22-bookworm-slim",
     dockerWorkspaceRoot: process.env.DOCKER_WORKSPACE_ROOT?.trim() || "./data/workspaces",
     dockerContainerPrefix: process.env.DOCKER_CONTAINER_PREFIX?.trim() || "senaka-ws",
@@ -85,5 +94,10 @@ export function loadConfig(): AppConfig {
     dockerPidsLimit: Math.floor(getNumberEnv("DOCKER_PIDS_LIMIT", 256)),
     workerDisableThinkingHack: getBooleanEnv("WORKER_DISABLE_THINKING_HACK", true),
     workerThinkBypassTag: process.env.WORKER_THINK_BYPASS_TAG?.trim() || "<think></think>",
+    workerMaxResponseTokens: Math.floor(getNumberEnv("WORKER_MAX_RESPONSE_TOKENS", 256)),
+    workerActionMaxRetries: Math.floor(getNumberEnv("WORKER_ACTION_MAX_RETRIES", 6)),
+    debugLlmRequests: getBooleanEnv("DEBUG_LLM_REQUESTS", false),
+    mainDecisionDisableThinkingHack: getBooleanEnv("MAIN_DECISION_DISABLE_THINKING_HACK", true),
+    mainDecisionThinkBypassTag: process.env.MAIN_DECISION_THINK_BYPASS_TAG?.trim() || "<think></think>",
   };
 }

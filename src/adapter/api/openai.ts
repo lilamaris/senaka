@@ -33,6 +33,11 @@ interface OpenAIStreamChunk {
   choices?: OpenAIStreamChoice[];
 }
 
+const DEBUG_LLM_REQUESTS = (() => {
+  const raw = process.env.DEBUG_LLM_REQUESTS?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+})();
+
 function toEndpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 }
@@ -69,6 +74,60 @@ function toRequestBody(candidate: ResolvedModelCandidate, request: CompletionReq
     ...(candidate.extraBody ?? {}),
     ...(request.extraBody ?? {}),
   };
+}
+
+function detectThinkBypassInjection(messages: ChatMessage[], tag: string): boolean {
+  const userIdx = messages.findIndex((message) => message.role === "user");
+  if (userIdx < 0 || userIdx + 1 >= messages.length) {
+    return false;
+  }
+  const next = messages[userIdx + 1];
+  return next.role === "assistant" && next.content === tag;
+}
+
+function toOneLine(value: string, maxLen = 220): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLen) {
+    return compact;
+  }
+  return `${compact.slice(0, maxLen)}...`;
+}
+
+function debugLogRequest(params: {
+  candidate: ResolvedModelCandidate;
+  request: CompletionRequest;
+  body: Record<string, unknown>;
+  stream: boolean;
+}): void {
+  const enabled = params.request.debugEnabled === true || DEBUG_LLM_REQUESTS;
+  if (!enabled) {
+    return;
+  }
+
+  const tag = params.request.thinkBypassTag?.trim() || "<think></think>";
+  const bodyMessages = (params.body.messages as ChatMessage[]) ?? [];
+  const injected = detectThinkBypassInjection(bodyMessages, tag);
+  const roleSeq = bodyMessages.map((m) => m.role).join(">");
+  const preview = bodyMessages
+    .slice(0, 3)
+    .map((m, i) => `${i}:${m.role}:${toOneLine(m.content, 80)}`)
+    .join(" | ");
+  const maxTokens = typeof params.body.max_tokens === "number" ? String(params.body.max_tokens) : "<unset>";
+
+  process.stderr.write(
+    [
+      "[llm-debug]",
+      `tag=${params.request.debugTag ?? "unknown"}`,
+      `provider=${params.candidate.provider}`,
+      `model=${params.candidate.model}`,
+      `stream=${params.stream}`,
+      `disableThinkingHack=${params.request.disableThinkingHack === true}`,
+      `thinkBypassInjected=${injected}`,
+      `max_tokens=${maxTokens}`,
+      `roleSeq=${roleSeq}`,
+      `preview=${preview}`,
+    ].join(" ") + "\n",
+  );
 }
 
 function extractChunkToken(chunk: OpenAIStreamChunk): string {
@@ -126,13 +185,15 @@ class OpenAIChatCompletionApi implements ChatCompletionApi {
   constructor(private readonly candidate: ResolvedModelCandidate) {}
 
   async complete(request: CompletionRequest): Promise<ChatCompletionResponse> {
+    const body = toRequestBody(this.candidate, request, false);
+    debugLogRequest({ candidate: this.candidate, request, body, stream: false });
     const response = await fetch(toEndpoint(this.candidate.baseUrl), {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${this.candidate.apiKey}`,
       },
-      body: JSON.stringify(toRequestBody(this.candidate, request, false)),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -151,13 +212,15 @@ class OpenAIChatCompletionApi implements ChatCompletionApi {
   }
 
   async stream(request: CompletionRequest, handlers?: StreamHandler): Promise<ChatCompletionResponse> {
+    const body = toRequestBody(this.candidate, request, true);
+    debugLogRequest({ candidate: this.candidate, request, body, stream: true });
     const response = await fetch(toEndpoint(this.candidate.baseUrl), {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${this.candidate.apiKey}`,
       },
-      body: JSON.stringify(toRequestBody(this.candidate, request, true)),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
