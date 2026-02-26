@@ -26,6 +26,33 @@ function getBooleanEnv(name: string, fallback: boolean): boolean {
   return fallback;
 }
 
+function getBooleanEnvAliases(names: string[], fallback: boolean): boolean {
+  for (const name of names) {
+    const raw = process.env[name];
+    if (!raw || !raw.trim()) {
+      continue;
+    }
+    const normalized = raw.trim().toLowerCase();
+    if (["1", "true", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["0", "false", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+  return fallback;
+}
+
+function getStringEnvAliases(names: string[], fallback: string): string {
+  for (const name of names) {
+    const raw = process.env[name];
+    if (raw && raw.trim()) {
+      return raw.trim();
+    }
+  }
+  return fallback;
+}
+
 export interface AppConfig {
   openaiBaseUrl?: string;
   openaiApiKey?: string;
@@ -48,13 +75,13 @@ export interface AppConfig {
   dockerMemory: string;
   dockerCpus: string;
   dockerPidsLimit: number;
-  workerDisableThinkingHack: boolean;
-  workerThinkBypassTag: string;
+  workerEnableThinking: boolean;
+  workerThinkingPrefillTag: string;
   workerMaxResponseTokens: number;
   workerActionMaxRetries: number;
   debugLlmRequests: boolean;
-  mainDecisionDisableThinkingHack: boolean;
-  mainDecisionThinkBypassTag: string;
+  mainDecisionEnableThinking: boolean;
+  mainDecisionThinkingPrefillTag: string;
 }
 
 export function loadConfig(): AppConfig {
@@ -80,12 +107,24 @@ export function loadConfig(): AppConfig {
     dockerMemory: process.env.DOCKER_MEMORY?.trim() || "512m",
     dockerCpus: process.env.DOCKER_CPUS?.trim() || "1.0",
     dockerPidsLimit: Math.floor(getNumberEnv("DOCKER_PIDS_LIMIT", 256)),
-    workerDisableThinkingHack: getBooleanEnv("WORKER_DISABLE_THINKING_HACK", true),
-    workerThinkBypassTag: process.env.WORKER_THINK_BYPASS_TAG?.trim() || "<think></think>",
+    workerEnableThinking: getBooleanEnvAliases(
+      ["WORKER_ENABLE_THINKING"],
+      !getBooleanEnv("WORKER_DISABLE_THINKING_HACK", true),
+    ),
+    workerThinkingPrefillTag: getStringEnvAliases(
+      ["WORKER_THINKING_PREFILL", "WORKER_THINK_BYPASS_TAG"],
+      "<think></think>",
+    ),
     workerMaxResponseTokens: Math.floor(getNumberEnv("WORKER_MAX_RESPONSE_TOKENS", 256)),
     workerActionMaxRetries: Math.floor(getNumberEnv("WORKER_ACTION_MAX_RETRIES", 6)),
     debugLlmRequests: getBooleanEnv("DEBUG_LLM_REQUESTS", false),
-    mainDecisionDisableThinkingHack: getBooleanEnv("MAIN_DECISION_DISABLE_THINKING_HACK", true),
-    mainDecisionThinkBypassTag: process.env.MAIN_DECISION_THINK_BYPASS_TAG?.trim() || "<think></think>",
+    mainDecisionEnableThinking: getBooleanEnvAliases(
+      ["MAIN_DECISION_ENABLE_THINKING"],
+      !getBooleanEnv("MAIN_DECISION_DISABLE_THINKING_HACK", true),
+    ),
+    mainDecisionThinkingPrefillTag: getStringEnvAliases(
+      ["MAIN_DECISION_THINKING_PREFILL", "MAIN_DECISION_THINK_BYPASS_TAG"],
+      "<think></think>",
+    ),
   };
 }

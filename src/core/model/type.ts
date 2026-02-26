@@ -5,6 +5,6 @@ export interface ModelLoadOption {
   minP?: number;
   topK?: number;
   extraBody?: Record<string, unknown>;
-  disableThinkingHack?: boolean;
-  thinkBypassTag?: string;
+  enableThinking?: boolean;
+  thinkingPrefillTag?: string;
 }

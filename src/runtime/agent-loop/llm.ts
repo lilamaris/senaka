@@ -180,8 +180,8 @@ export async function askMainForPlanning(params: {
     retryLimit: MAIN_PLANNING_RETRY_LIMIT,
     streamOnFirstAttempt: params.allowStreaming,
     requestForAttempt: (_messages, _attempt) => ({
-      disableThinkingHack: params.config.mainDecisionDisableThinkingHack,
-      thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+      enableThinking: params.config.mainDecisionEnableThinking,
+      thinkingPrefillTag: params.config.mainDecisionThinkingPrefillTag,
       ...MAIN_PLANNING_SAMPLING,
       debugEnabled: params.config.debugLlmRequests,
       debugTag: "main-planning",
@@ -208,18 +208,18 @@ export async function askMainForDecision(params: {
 }): Promise<MainDecision> {
   const baseMessages = buildMainDecisionMessages(params.goal, params.evidenceSummary, params.forceFinalize);
   const mainApi = resolveChatCompletionApi(params.mainModel);
-  const disableThinkingHack =
+  const enableThinking =
     typeof params.enableThinkOverride === "boolean"
-      ? !params.enableThinkOverride
-      : params.config.mainDecisionDisableThinkingHack;
+      ? params.enableThinkOverride
+      : params.config.mainDecisionEnableThinking;
   return requestStructuredWithRepair({
     api: mainApi,
     baseMessages,
     retryLimit: MAIN_DECISION_RETRY_LIMIT,
     streamOnFirstAttempt: params.allowStreaming,
     requestForAttempt: (_messages, _attempt) => ({
-      disableThinkingHack,
-      thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+      enableThinking,
+      thinkingPrefillTag: params.config.mainDecisionThinkingPrefillTag,
       ...MAIN_DECISION_SAMPLING,
       debugEnabled: params.config.debugLlmRequests,
       debugTag: "main-decision",
@@ -252,8 +252,8 @@ export async function askWorkerForAction(params: {
       retryLimit: params.maxRetries,
       streamOnFirstAttempt: params.allowStreaming,
       requestForAttempt: (_messages, attempt) => ({
-        disableThinkingHack: params.config.workerDisableThinkingHack,
-        thinkBypassTag: params.config.workerThinkBypassTag,
+        enableThinking: params.config.workerEnableThinking,
+        thinkingPrefillTag: params.config.workerThinkingPrefillTag,
         maxTokens: params.config.workerMaxResponseTokens,
         ...WORKER_SAMPLING,
         debugEnabled: params.config.debugLlmRequests,
@@ -307,8 +307,7 @@ export async function askMainForFinalAnswer(params: {
     params.draft,
   );
   let messages = baseMessages;
-  const disableThinkingHack =
-    typeof params.enableThinkOverride === "boolean" ? !params.enableThinkOverride : undefined;
+  const enableThinking = typeof params.enableThinkOverride === "boolean" ? params.enableThinkOverride : undefined;
 
   for (let attempt = 0; attempt <= MAIN_FINAL_ANSWER_RETRY_LIMIT; attempt += 1) {
     const content = await requestChatReply({
@@ -318,10 +317,10 @@ export async function askMainForFinalAnswer(params: {
       streamOnFirstAttempt: params.allowStreaming,
       request: {
         ...MAIN_FINAL_REPORT_SAMPLING,
-        ...(typeof disableThinkingHack === "boolean"
+        ...(typeof enableThinking === "boolean"
           ? {
-              disableThinkingHack,
-              thinkBypassTag: params.config.mainDecisionThinkBypassTag,
+              enableThinking,
+              thinkingPrefillTag: params.config.mainDecisionThinkingPrefillTag,
             }
           : {}),
         debugEnabled: params.config.debugLlmRequests,

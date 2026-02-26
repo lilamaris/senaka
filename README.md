@@ -83,13 +83,14 @@
 - `DOCKER_MEMORY` (기본값: `512m`)
 - `DOCKER_CPUS` (기본값: `1.0`)
 - `DOCKER_PIDS_LIMIT` (기본값: `256`)
-- `WORKER_DISABLE_THINKING_HACK` (기본값: `true`)
-- `WORKER_THINK_BYPASS_TAG` (기본값: `<think></think>`)
+- `WORKER_ENABLE_THINKING` (기본값: `false`)
+- `WORKER_THINKING_PREFILL` (기본값: `<think></think>`, think 억제를 위한 assistant prefill 태그)
 - `WORKER_MAX_RESPONSE_TOKENS` (기본값: `256`, worker 응답 길이 제한)
 - `WORKER_ACTION_MAX_RETRIES` (기본값: `6`, worker 검증 실패 재생성 최대 횟수)
 - `DEBUG_LLM_REQUESTS` (기본값: `false`, true면 LLM 요청 payload 요약 로그 출력)
-- `MAIN_DECISION_DISABLE_THINKING_HACK` (기본값: `true`, main 결정 단계 think bypass)
-- `MAIN_DECISION_THINK_BYPASS_TAG` (기본값: `<think></think>`)
+- `MAIN_DECISION_ENABLE_THINKING` (기본값: `false`, main planning/decision 단계 thinking 제어)
+- `MAIN_DECISION_THINKING_PREFILL` (기본값: `<think></think>`)
+- 하위 호환: `WORKER_DISABLE_THINKING_HACK`, `WORKER_THINK_BYPASS_TAG`, `MAIN_DECISION_DISABLE_THINKING_HACK`, `MAIN_DECISION_THINK_BYPASS_TAG`도 여전히 읽지만 신규 키 사용을 권장
 
 실행 예시:
 ```bash
@@ -163,8 +164,10 @@ TUI 명령:
 - 비활성화: `npm run agent:run -- --agent default --goal "<목표>" --no-stream`
 - `agent:tui`는 상태 머신 흐름을 따라 위→아래로 로그를 누적 출력합니다.
 - `worker-token` raw JSON 스트림은 숨기고, 도구 호출/결과를 구조화된 로그로 출력합니다.
-- `main-token`은 phase별(`main(<phase>)>`) 선형 스트림으로 출력됩니다.
+- `main-token`은 phase별 단일 스트림 라인으로 갱신되며 `<think>` 구간은 숨김 길이 메타로 축약 표시됩니다.
+- thinking 제어 시 요청 본문에 `enable_thinking`(루트)와 `extra_body.enable_thinking`를 함께 전송해 API 구현체 차이를 흡수합니다.
 - 각 실행 턴은 `TURN N START/END` 구분선으로 명확히 분리됩니다.
+- TUI는 `blessed` 레이아웃 기반으로 동작하며, 터미널 resize 시 입력 영역(회색 배경 + 상/하 패딩)을 재배치만 수행해 줄 중첩을 방지합니다.
 
 Planning/Compaction 관측:
 - `agent:run`, `agent:tui`에서 planning 이벤트(`planning-start`, `planning-result`)를 출력합니다.

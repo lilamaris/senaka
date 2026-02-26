@@ -56,9 +56,10 @@
   - worker/main JSON 출력 스키마 검증 + 자동 재시도(repair prompt)
   - worker 응답 길이(최대 토큰 추정) 검증 + 초과 시 재생성
   - worker 검증 재시도 한도 초과 시 루프 종료 대신 `ForcedSynthesis`로 폴백
-  - worker completion 요청 시 think bypass primer(`<think></think>`) 옵션 지원
-  - `DEBUG_LLM_REQUESTS=true` 시 worker/main 요청 payload 요약과 think bypass 주입 여부 로그 출력
-  - main 결정 단계에서도 think bypass 옵션 지원, 결정/최종응답 실패 시 폴백 응답 보장
+  - worker/main 요청에서 thinking 제어 옵션(`*_ENABLE_THINKING`, `*_THINKING_PREFILL`) 지원
+  - thinking 제어 시 `enable_thinking`(루트) + `extra_body.enable_thinking`(중첩) 동시 전송으로 OpenAI-compatible 구현체 차이를 흡수
+  - `DEBUG_LLM_REQUESTS=true` 시 worker/main 요청 payload 요약과 thinking prefill 주입 여부 로그 출력
+  - main 결정 단계에서도 thinking 제어 옵션 지원, 결정/최종응답 실패 시 폴백 응답 보장
   - `AssessSufficiency`/`ForcedSynthesis`의 main 호출 경로를 공통 헬퍼로 통합해 중복 이벤트/요청 구성을 제거
   - `call_tool` 시 shell 명령 실행 결과(stdout/stderr/exit code)를 worker에 재주입
   - `ask` 시 사용자 YES/NO 응답을 받아 동일 세션에서 증거 수집 계속 진행
