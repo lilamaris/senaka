@@ -37,7 +37,10 @@ function toEndpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
 }
 
-function applyThinkingPrefill(messages: ChatMessage[], tag: string): ChatMessage[] {
+function applyThinkingPrefill(
+  messages: ChatMessage[],
+  tag: string,
+): ChatMessage[] {
   const idx = [...messages]
     .map((message, i) => ({ role: message.role, i }))
     .reverse()
@@ -70,10 +73,15 @@ function applyThinkingCompatibilityFields(
     return baseExtraBody;
   }
 
-  const nestedExtraBody = isRecord(baseExtraBody.extra_body) ? baseExtraBody.extra_body : {};
+  const nestedExtraBody = isRecord(baseExtraBody.extra_body)
+    ? baseExtraBody.extra_body
+    : {};
   return {
     ...baseExtraBody,
     enable_thinking: enableThinking,
+    chat_template_kwargs: {
+      enable_thinking: enableThinking,
+    },
     extra_body: {
       ...nestedExtraBody,
       enable_thinking: enableThinking,
@@ -121,7 +129,10 @@ function toRequestBody(
   };
 }
 
-function detectThinkingPrefillInjection(messages: ChatMessage[], tag: string): boolean {
+function detectThinkingPrefillInjection(
+  messages: ChatMessage[],
+  tag: string,
+): boolean {
   const userIdx = [...messages]
     .map((message, i) => ({ role: message.role, i }))
     .reverse()
