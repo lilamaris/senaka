@@ -76,7 +76,9 @@
 - `TOOL_TIMEOUT_MS` (기본값: `20000`)
 - `TOOL_MAX_BUFFER_BYTES` (기본값: `1048576`)
 - `TOOL_MAX_PIPES` (기본값: `2`, worker shell 명령의 최대 `|` 개수)
-- `DOCKER_SANDBOX_IMAGE` (기본값: `node:22-bookworm-slim`)
+- `DOCKER_SANDBOX_IMAGE` (기본값: `senaka-sandbox:bookworm`)
+- `DOCKER_REQUIRED_TOOLS` (기본값: `sh,ls,cat,echo,grep,sed,awk,find,head,tail,wc,pwd,rg,jq,git,python3`)
+- `DOCKER_WORKSPACE_INIT_COMMAND` (optional, 그룹 워크스페이스 첫 생성 시 1회 실행)
 - `DOCKER_WORKSPACE_ROOT` (기본값: `./data/workspaces`)
 - `DOCKER_CONTAINER_PREFIX` (기본값: `senaka-ws`)
 - `DOCKER_NETWORK` (기본값: `none`)
@@ -86,7 +88,7 @@
 - `WORKER_ENABLE_THINKING` (기본값: `false`)
 - `WORKER_THINKING_PREFILL` (기본값: `<think></think>`, think 억제를 위한 assistant prefill 태그)
 - `WORKER_MAX_RESPONSE_TOKENS` (기본값: `256`, worker 응답 길이 제한)
-- `WORKER_ACTION_MAX_RETRIES` (기본값: `6`, worker 검증 실패 재생성 최대 횟수)
+- `WORKER_ACTION_MAX_RETRIES` (기본값: `6`, worker 검증 실패 시 내부 재생성 최대 횟수이자 연속 실패 시 `AssessSufficiency` 전환 임계치)
 - `DEBUG_LLM_REQUESTS` (기본값: `false`, true면 LLM 요청 payload 요약 로그 출력)
 - `MAIN_DECISION_ENABLE_THINKING` (기본값: `false`, main planning/decision 단계 thinking 제어)
 - `MAIN_DECISION_THINKING_PREFILL` (기본값: `<think></think>`)
@@ -96,6 +98,7 @@
 ```bash
 npm install
 cp .env.example .env
+npm run sandbox:image:build
 npm run build
 npm run chat -- --session default
 npm run chat:turn -- --session default --message "안녕하세요"
@@ -105,6 +108,8 @@ npm run chat:turn -- --session default --message "안녕하세요"
 - 현재는 `/chat/completions` 단일 경로를 사용합니다.
 - 인터랙티브 CLI에서 `/show`, `/reset`, `/exit` 명령을 지원합니다.
 - `chat/chat-turn`은 모델 프로파일에서 선택된 main 후보로 실행됩니다(`CHAT_MODEL_ID` 또는 `CHAT_AGENT_ID` 기준).
+- 샌드박스 모드를 쓰려면 `.env`에서 `TOOL_SANDBOX_MODE=docker`로 설정하세요.
+- 기본 샌드박스 이미지는 `senaka-sandbox:bookworm`이며 `npm run sandbox:image:build`로 로컬 빌드합니다.
 
 ### 2.5) Agent loop(main/worker 분리) 실행
 실행 예시:
@@ -139,7 +144,7 @@ Worker 프로토콜:
 - `ContextGuard`: 모델 컨텍스트 한도 초과 전 세션 압축(compaction) 수행
 - `AcquireEvidence`: worker가 `call_tool`/`ask`/`finalize`로 증거 수집
 - `AssessSufficiency`: main이 `finalize/continue` 판단
-- `ForcedSynthesis`: step 초과/검증 실패 시 강제 최종화
+- `ForcedSynthesis`: step 초과 등 루프 제한 도달 시 강제 최종화
 - `Done`: 결과 저장 및 종료
 
 모드:
