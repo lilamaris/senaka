@@ -45,6 +45,7 @@ export async function runAgentLoop(
   const workspaceGroupId = options?.workspaceGroupId?.trim() || session.id;
   const contextLimitTokens = resolveContextLimitTokens(routed);
   const runtime: LoopRuntime = {
+    workerValidationFailureStreak: 0,
     evidence: [],
     guidance: "",
     recentUserAnswer: "",

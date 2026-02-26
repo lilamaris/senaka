@@ -248,14 +248,35 @@ export async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRunt
       workerMessages,
       onToken: (token) => deps.options?.onEvent?.({ type: "worker-token", step: runtime.step, token }),
     });
+    runtime.workerValidationFailureStreak = 0;
   } catch (error) {
     const reason = (error as Error).message;
-    const fallbackGuidance = `Worker validation failed at step ${runtime.step}. Proceed to main finalization using collected evidence. ${reason}`;
-    deps.options?.onEvent?.({ type: "worker-action", step: runtime.step, action: "finalize", detail: fallbackGuidance });
-    runtime.evidence.push({ kind: "main_guidance", summary: fallbackGuidance });
-    runtime.forcedSynthesisReason = `worker validation failed at step ${runtime.step}: ${reason}`;
+    runtime.workerValidationFailureStreak += 1;
+    const retryGuidance = `Worker validation failed at step ${runtime.step}. Retry evidence collection with strict JSON-only output and concise content. ${reason}`;
+    runtime.guidance = retryGuidance;
+    runtime.evidence.push({ kind: "main_guidance", summary: retryGuidance });
+    const switchedToAssess = runtime.workerValidationFailureStreak >= deps.config.workerActionMaxRetries;
+    deps.options?.onEvent?.({
+      type: "worker-validation-failed",
+      step: runtime.step,
+      reason,
+      consecutiveFailures: runtime.workerValidationFailureStreak,
+      maxFailures: deps.config.workerActionMaxRetries,
+      switchedToAssess,
+    });
     await appendSystemEntry(deps.config, deps.session, `[WORKER_VALIDATION_FAIL_${runtime.step}] ${reason}`);
-    return LoopState.ForcedSynthesis;
+    if (switchedToAssess) {
+      runtime.guidance =
+        `Worker validation failed ${runtime.workerValidationFailureStreak} times consecutively. Switch to main sufficiency assessment using current evidence.`;
+      runtime.evidence.push({ kind: "main_guidance", summary: runtime.guidance });
+      await appendSystemEntry(
+        deps.config,
+        deps.session,
+        `[WORKER_VALIDATION_EXHAUSTED_${runtime.step}] streak=${runtime.workerValidationFailureStreak}`,
+      );
+      return LoopState.AssessSufficiency;
+    }
+    return LoopState.AcquireEvidence;
   }
 
   if (action.action === "call_tool") {
@@ -264,11 +285,13 @@ export async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRunt
 
     const result = await runShellCommand(deps.config, action.args.cmd, deps.workspaceGroupId);
     runtime.lastTool = result;
+    const reason = action.reason.trim();
 
     runtime.evidence.push({
       kind: "tool_result",
-      summary: summarizeToolResult(result),
+      summary: `reason=${reason} | ${summarizeToolResult(result)}`,
       detail: [
+        `reason: ${reason}`,
         `cmd: ${result.cmd}`,
         `exit: ${result.exitCode}`,
         "stdout:",
@@ -281,6 +304,8 @@ export async function handleWorkerTurn(deps: LoopDependencies, runtime: LoopRunt
     deps.options?.onEvent?.({
       type: "tool-result",
       step: runtime.step,
+      cmd: result.cmd,
+      reason,
       exitCode: result.exitCode,
       stdout: result.stdout,
       stderr: result.stderr,
@@ -386,7 +411,7 @@ export async function handleMainDecisionTurn(deps: LoopDependencies, runtime: Lo
 }
 
 /**
- * max step 초과/worker 검증 실패 시 강제 최종화 경로를 처리한다.
+ * max step 초과 등 제한 도달 시 강제 최종화 경로를 처리한다.
  */
 export async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: LoopRuntime): Promise<LoopState> {
   emitLoopState(

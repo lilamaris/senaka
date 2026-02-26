@@ -34,7 +34,7 @@
       "mode": "main-worker",
       "mainModelId": "main-default",
       "workerModelId": "worker-fast",
-      "maxSteps": 3,
+      "maxSteps": 10,
       "stream": true,
       "description": "Default agent profile"
     },

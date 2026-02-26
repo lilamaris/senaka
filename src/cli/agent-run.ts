@@ -135,6 +135,16 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (event.type === "worker-validation-failed") {
+      process.stdout.write(
+        `worker(validation-failed)> step=${event.step} retry=${event.consecutiveFailures}/${event.maxFailures} reason=${event.reason}\n`,
+      );
+      if (event.switchedToAssess) {
+        process.stdout.write("worker(validation-failed)> switching to assess-sufficiency\n");
+      }
+      return;
+    }
+
     if (event.type === "main-token") {
       if (event.phase !== "final-report") {
         structuredMainRawByPhase[event.phase] = `${structuredMainRawByPhase[event.phase] ?? ""}${event.token}`;

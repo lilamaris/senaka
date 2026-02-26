@@ -37,6 +37,7 @@ export interface LoopRuntime {
   planning?: PlanningResult;
   forcedSynthesisEnableThink?: boolean;
   forcedSynthesisReason?: string;
+  workerValidationFailureStreak: number;
   evidence: EvidenceItem[];
   guidance: string;
   recentUserAnswer: string;

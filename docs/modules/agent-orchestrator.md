@@ -14,7 +14,7 @@
   - `ContextGuard`: 컨텍스트 초과 전 대화 compaction
   - `AcquireEvidence`: worker 중심 증거 수집
   - `AssessSufficiency`: main의 `finalize/continue` 판단
-  - `ForcedSynthesis`: 제한 초과/검증 실패 시 강제 최종화
+  - `ForcedSynthesis`: step 제한 초과 등 루프 한계 도달 시 강제 최종화
   - `Done`: 세션 저장 및 결과 반환 완료
 
 ## 모듈 구성
@@ -55,7 +55,7 @@
   - 상태 머신 일반 명칭(`PlanIntent`, `ContextGuard`, `AcquireEvidence`, `AssessSufficiency`, `ForcedSynthesis`, `Done`) 적용
   - worker/main JSON 출력 스키마 검증 + 자동 재시도(repair prompt)
   - worker 응답 길이(최대 토큰 추정) 검증 + 초과 시 재생성
-  - worker 검증 재시도 한도 초과 시 루프 종료 대신 `ForcedSynthesis`로 폴백
+  - worker 검증 재시도 한도 초과 시 step 차감 없이 guidance를 보강해 재시도하며, 연속 실패 누적 시 `AssessSufficiency`로 전환
   - worker/main 요청에서 thinking 제어 옵션(`*_ENABLE_THINKING`, `*_THINKING_PREFILL`) 지원
   - thinking 제어 시 `enable_thinking`(루트) + `extra_body.enable_thinking`(중첩) 동시 전송으로 OpenAI-compatible 구현체 차이를 흡수
   - `DEBUG_LLM_REQUESTS=true` 시 worker/main 요청 payload 요약과 thinking prefill 주입 여부 로그 출력

@@ -617,6 +617,20 @@ class AgentTuiApp {
       return;
     }
 
+    if (event.type === "worker-validation-failed") {
+      this.stopLoadingIndicator("worker-action");
+      this.appendLog(
+        `worker validation failed (${event.consecutiveFailures}/${event.maxFailures})`,
+        "yellow-fg",
+      );
+      this.appendLog(`reason: ${trimOneLine(event.reason, 300)}`, "gray-fg");
+      if (event.switchedToAssess) {
+        this.appendLog("switching to assess sufficiency with current evidence", "yellow-fg");
+      }
+      this.requestRender(true);
+      return;
+    }
+
     if (event.type === "tool-start") {
       this.state.toolTraceByStep[event.step] = {
         ...(this.state.toolTraceByStep[event.step] ?? {}),
@@ -627,12 +641,14 @@ class AgentTuiApp {
 
     if (event.type === "tool-result") {
       const trace = this.state.toolTraceByStep[event.step] ?? {};
+      const reason = event.reason ?? trace.reason ?? "<missing reason>";
+      const cmd = event.cmd ?? trace.cmd ?? "<missing cmd>";
       this.appendLog(
-        `reason: ${trimOneLine(trace.reason ?? "<missing reason>", 260)}`,
+        `reason: ${trimOneLine(reason, 260)}`,
         "yellow-fg",
       );
       this.appendLog(
-        `cmd   : ${trimOneLine(trace.cmd ?? "<missing cmd>", 320)}`,
+        `cmd   : ${trimOneLine(cmd, 320)}`,
         "white-fg",
       );
       this.appendLog(

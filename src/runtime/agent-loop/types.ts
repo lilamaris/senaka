@@ -102,10 +102,20 @@ export type AgentLoopEvent =
   | { type: "worker-start"; step: number }
   | { type: "worker-token"; step: number; token: string }
   | { type: "worker-action"; step: number; action: WorkerAction["action"]; detail: string }
+  | {
+      type: "worker-validation-failed";
+      step: number;
+      reason: string;
+      consecutiveFailures: number;
+      maxFailures: number;
+      switchedToAssess: boolean;
+    }
   | { type: "tool-start"; step: number; cmd: string }
   | {
       type: "tool-result";
       step: number;
+      cmd: string;
+      reason?: string;
       exitCode: number;
       stdout: string;
       stderr: string;
