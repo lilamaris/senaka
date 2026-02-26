@@ -2,6 +2,7 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { loadConfig } from "../config/env.js";
 import { runAgentLoop, type AgentLoopEvent } from "../runtime/agent-loop.js";
+import { parseMainDecision, parsePlanningResult, stripThinkBlocks } from "../runtime/agent-loop/helpers.js";
 import { loadOrCreateSession } from "../runtime/session-store.js";
 import type { AgentMode } from "../types/model.js";
 
@@ -73,23 +74,49 @@ async function main(): Promise<void> {
   const rl = createInterface({ input, output });
   let mainStreaming = false;
   let mainStreamingPhase: string | undefined;
+  const structuredMainRawByPhase: Record<string, string> = {};
 
   /**
    * 루프 이벤트를 CLI 출력으로 투영한다.
    * 현재는 main-token/final-answer 중심으로만 처리해 로그 노이즈를 줄인다.
    */
   const renderEvent = (event: AgentLoopEvent): void => {
+    if (event.type === "main-start" && event.phase !== "final-report") {
+      structuredMainRawByPhase[event.phase] = "";
+      process.stdout.write(`main(${event.phase})> collecting structured output\n`);
+      return;
+    }
+
     if (event.type === "planning-start") {
       process.stdout.write(`planning(start)> goal=${event.goal}\n`);
       return;
     }
 
     if (event.type === "planning-result") {
-      process.stdout.write(
-        `planning(result)> next=${event.next} reason=${event.reason}${event.guidance ? ` guidance=${event.guidance}` : ""}\n`,
-      );
-      if (event.evidenceGoals.length > 0) {
-        process.stdout.write(`planning(goals)> ${event.evidenceGoals.join(" | ")}\n`);
+      const raw = stripThinkBlocks(structuredMainRawByPhase.planning ?? "");
+      delete structuredMainRawByPhase.planning;
+      let next = event.next;
+      let reason = event.reason;
+      let guidance = event.guidance;
+      let goals = event.evidenceGoals;
+      try {
+        const parsed = parsePlanningResult(raw);
+        next = parsed.next;
+        reason = parsed.reason;
+        guidance = parsed.guidance;
+        goals = parsed.evidence_goals ?? [];
+      } catch {
+        // fallback to parsed runtime event payload
+      }
+
+      process.stdout.write("planning(result)\n");
+      process.stdout.write(`  next  : ${next}\n`);
+      process.stdout.write(`  reason: ${reason}\n`);
+      if (guidance) {
+        process.stdout.write(`  guide : ${guidance}\n`);
+      }
+      if (goals.length > 0) {
+        process.stdout.write(`  goals : ${goals.join(" | ")}\n`);
       }
       return;
     }
@@ -109,6 +136,10 @@ async function main(): Promise<void> {
     }
 
     if (event.type === "main-token") {
+      if (event.phase !== "final-report") {
+        structuredMainRawByPhase[event.phase] = `${structuredMainRawByPhase[event.phase] ?? ""}${event.token}`;
+        return;
+      }
       if (!mainStreaming || mainStreamingPhase !== event.phase) {
         if (mainStreaming) {
           process.stdout.write("\n");
@@ -118,6 +149,42 @@ async function main(): Promise<void> {
         mainStreamingPhase = event.phase;
       }
       process.stdout.write(event.token);
+      return;
+    }
+
+    if (event.type === "main-decision") {
+      const raw = stripThinkBlocks(structuredMainRawByPhase[event.phase] ?? "");
+      delete structuredMainRawByPhase[event.phase];
+      let decision = event.decision;
+      let guidance = event.guidance;
+      let neededEvidence: string[] = [];
+      let summaryEvidence: string[] = [];
+      let forcedThink: boolean | undefined;
+      try {
+        const parsed = parseMainDecision(raw);
+        decision = parsed.decision;
+        guidance = parsed.guidance;
+        neededEvidence = parsed.needed_evidence ?? [];
+        summaryEvidence = parsed.summary_evidence ?? [];
+        forcedThink = parsed.forced_synthesis_enable_think;
+      } catch {
+        // fallback to parsed runtime event payload
+      }
+
+      process.stdout.write(`main(decision:${event.phase})\n`);
+      process.stdout.write(`  decision: ${decision}\n`);
+      if (guidance) {
+        process.stdout.write(`  guide   : ${guidance}\n`);
+      }
+      if (neededEvidence.length > 0) {
+        process.stdout.write(`  needed  : ${neededEvidence.join(" | ")}\n`);
+      }
+      if (summaryEvidence.length > 0) {
+        process.stdout.write(`  summary : ${summaryEvidence.join(" | ")}\n`);
+      }
+      if (typeof forcedThink === "boolean") {
+        process.stdout.write(`  think   : forced_synthesis_enable_think=${forcedThink}\n`);
+      }
       return;
     }
 

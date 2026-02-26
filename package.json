@@ -12,10 +12,12 @@
     "models:list": "node dist/cli/models-list.js"
   },
   "dependencies": {
+    "blessed": "^0.1.81",
     "dotenv": "^16.4.7"
   },
   "devDependencies": {
-    "typescript": "^5.9.2",
-    "@types/node": "^22.14.0"
+    "@types/blessed": "^0.1.27",
+    "@types/node": "^22.14.0",
+    "typescript": "^5.9.2"
   }
 }

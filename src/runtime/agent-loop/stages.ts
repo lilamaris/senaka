@@ -97,12 +97,16 @@ async function requestMainDecision(params: {
 async function requestMainFinalReport(params: {
   deps: LoopDependencies;
   runtime: LoopRuntime;
-  phase: "forced-synthesis";
   evidenceSummary: string[];
   decisionContext?: string;
   draft?: string;
   enableThinkOverride?: boolean;
 }): Promise<string> {
+  params.deps.options?.onEvent?.({
+    type: "main-start",
+    phase: "final-report",
+    evidenceCount: params.runtime.evidence.length,
+  });
   return askMainForFinalAnswer({
     config: params.deps.config,
     goal: params.deps.goal,
@@ -111,7 +115,7 @@ async function requestMainFinalReport(params: {
     planning: params.runtime.planning,
     draft: params.draft,
     allowStreaming: params.deps.routed.stream,
-    onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", phase: params.phase, token }),
+    onToken: (token) => params.deps.options?.onEvent?.({ type: "main-token", phase: "final-report", token }),
     enableThinkOverride: params.enableThinkOverride,
     mainModel: params.deps.routed.main,
   });
@@ -405,7 +409,6 @@ export async function handleForceFinalizeTurn(deps: LoopDependencies, runtime: L
     runtime.finalAnswer = await requestMainFinalReport({
       deps,
       runtime,
-      phase: "forced-synthesis",
       evidenceSummary,
       decisionContext: summarizeDecisionContext(decision),
       draft: decision.answer?.trim(),

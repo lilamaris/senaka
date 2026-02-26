@@ -40,8 +40,9 @@ CLI와 WebUI가 동일 런타임을 공유하도록 하여 운영 일관성 확�
 - 세션 전환(`/session ID`)
 - 상태 머신 단계(`PlanIntent`~`Done`)를 위→아래 선형 로그로 출력
 - `worker-token` raw JSON 스트림을 숨기고, 도구 호출/결과는 구조화 로그로 출력
-- main 스트림은 `main(<phase>)>` 프리픽스로 연속 출력
+- main 스트림은 `main(<phase>)>` 단일 라인을 갱신하며 `<think>` 블록은 숨김 길이 메타로 축약 표시
 - 턴 간 구분선(`TURN N START/END`)으로 실행 경계 표시
+- blessed 기반 레이아웃으로 입력 영역(회색 배경 + 상/하 패딩)과 로그 영역을 분리해 resize 시 줄 중첩 없이 안정적으로 재렌더
 
 ## 현재 CLI 단일 실행 기능
 - `agent:run`은 worker `ask` 액션 발생 시 `answer(YES/NO)>`로 사용자 응답 수집
