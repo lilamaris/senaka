@@ -38,6 +38,12 @@
 - `--memory`, `--cpus`, `--pids-limit` 제한
 - `tmpfs`(`/tmp`, `/run`) 최소 권한
 
+## 기본 이미지/초기화
+- 기본 샌드박스 이미지: `senaka-sandbox:bookworm`
+- 빌드: `npm run sandbox:image:build` (`docker/sandbox-minimal/Dockerfile`)
+- 최소 도구 검증: `DOCKER_REQUIRED_TOOLS` 목록을 컨테이너 시작 시 점검, 누락 시 실행 중단
+- 워크스페이스 1회 초기화: `DOCKER_WORKSPACE_INIT_COMMAND` 설정 시 그룹별 첫 실행에서 `/workspace/.senaka/init.done` 마커 기준 1회 실행
+
 ## 운영 메모
 - 그룹별 상태는 `DOCKER_WORKSPACE_ROOT/<group_id>`에 유지
 - 컨테이너 내부 기본 쉘은 `DOCKER_SHELL_PATH`(기본 `/bin/sh`) 사용

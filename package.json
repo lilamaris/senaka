@@ -9,7 +9,8 @@
     "chat:turn": "node dist/cli/chat-turn.js",
     "agent:run": "node dist/cli/agent-run.js",
     "agent:tui": "node dist/cli/agent-tui.js",
-    "models:list": "node dist/cli/models-list.js"
+    "models:list": "node dist/cli/models-list.js",
+    "sandbox:image:build": "docker build -t senaka-sandbox:bookworm -f docker/sandbox-minimal/Dockerfile ."
   },
   "dependencies": {
     "blessed": "^0.1.81",

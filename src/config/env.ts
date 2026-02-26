@@ -75,6 +75,8 @@ export interface AppConfig {
   dockerMemory: string;
   dockerCpus: string;
   dockerPidsLimit: number;
+  dockerRequiredTools: string[];
+  dockerWorkspaceInitCommand?: string;
   workerEnableThinking: boolean;
   workerThinkingPrefillTag: string;
   workerMaxResponseTokens: number;
@@ -85,6 +87,14 @@ export interface AppConfig {
 }
 
 export function loadConfig(): AppConfig {
+  const dockerRequiredToolsRaw =
+    process.env.DOCKER_REQUIRED_TOOLS?.trim() ||
+    "sh,ls,cat,echo,grep,sed,awk,find,head,tail,wc,pwd,rg,jq,git,python3";
+  const dockerRequiredTools = dockerRequiredToolsRaw
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
   return {
     openaiBaseUrl: process.env.OPENAI_BASE_URL?.trim() || undefined,
     openaiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
@@ -100,13 +110,15 @@ export function loadConfig(): AppConfig {
     toolTimeoutMs: getNumberEnv("TOOL_TIMEOUT_MS", 20_000),
     toolMaxBufferBytes: getNumberEnv("TOOL_MAX_BUFFER_BYTES", 1024 * 1024),
     toolMaxPipes: Math.floor(getNumberEnv("TOOL_MAX_PIPES", 2)),
-    dockerSandboxImage: process.env.DOCKER_SANDBOX_IMAGE?.trim() || "node:22-bookworm-slim",
+    dockerSandboxImage: process.env.DOCKER_SANDBOX_IMAGE?.trim() || "senaka-sandbox:bookworm",
     dockerWorkspaceRoot: process.env.DOCKER_WORKSPACE_ROOT?.trim() || "./data/workspaces",
     dockerContainerPrefix: process.env.DOCKER_CONTAINER_PREFIX?.trim() || "senaka-ws",
     dockerNetwork: process.env.DOCKER_NETWORK?.trim() || "none",
     dockerMemory: process.env.DOCKER_MEMORY?.trim() || "512m",
     dockerCpus: process.env.DOCKER_CPUS?.trim() || "1.0",
     dockerPidsLimit: Math.floor(getNumberEnv("DOCKER_PIDS_LIMIT", 256)),
+    dockerRequiredTools,
+    dockerWorkspaceInitCommand: process.env.DOCKER_WORKSPACE_INIT_COMMAND?.trim() || undefined,
     workerEnableThinking: getBooleanEnvAliases(
       ["WORKER_ENABLE_THINKING"],
       !getBooleanEnv("WORKER_DISABLE_THINKING_HACK", true),

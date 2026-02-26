@@ -148,6 +148,8 @@ export async function runShellCommand(config: AppConfig, cmd: string, workspaceG
     dockerMemory: config.dockerMemory,
     dockerCpus: config.dockerCpus,
     dockerPidsLimit: config.dockerPidsLimit,
+    dockerRequiredTools: config.dockerRequiredTools,
+    dockerWorkspaceInitCommand: config.dockerWorkspaceInitCommand,
   });
 }
 
